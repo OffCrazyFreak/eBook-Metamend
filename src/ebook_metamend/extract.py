@@ -1,0 +1,118 @@
+"""Dump what every book actually contains, for auditing a library by eye.
+
+Writes one JSON per top-level category: the filename's claim, the embedded
+metadata, and the opening text. Useful for spotting books whose metadata and
+contents disagree, which no automated score reliably catches.
+"""
+
+from __future__ import annotations
+
+import html
+import json
+import os
+import re
+import subprocess
+import zipfile
+from typing import Any
+from xml.etree import ElementTree as ET
+
+from . import opf
+from .config import LIBRARY
+from .library import parse_filename
+
+#: Enough opening text to recognise a book, not enough to be a copy of it.
+TEXT_LIMIT = 1600
+MAX_DOCUMENTS = 6
+PDF_PAGES = 6
+
+_SCRIPT_OR_STYLE = re.compile(r'<(script|style)[^>]*>.*?</\1>', re.S | re.I)
+_TAG = re.compile(r'<[^>]+>')
+_UNSAFE = re.compile(r'[^A-Za-z0-9]+')
+
+
+def epub_meta_and_text(path: str) -> tuple[dict[str, Any], str]:
+    meta: dict[str, Any] = {}
+    text = ''
+    try:
+        z = zipfile.ZipFile(path)
+        names = z.namelist()
+        opf_names = [n for n in names if n.lower().endswith('.opf')]
+        if opf_names:
+            root = ET.fromstring(z.read(opf_names[0]).decode('utf8', 'ignore'))
+            record = opf.parse_root(root)
+            meta = {
+                'title': record['title'],
+                'authors': record['authors'],
+                'publisher': record['publisher'],
+                'tags': record['tags'],
+                'desc_len': len(record['description']),
+                'series': record['series'],
+            }
+        for name in sorted(n for n in names if n.lower().endswith(('.xhtml', '.html', '.htm'))):
+            raw = _SCRIPT_OR_STYLE.sub(' ', z.read(name).decode('utf8', 'ignore'))
+            chunk = re.sub(r'\s+', ' ', html.unescape(_TAG.sub(' ', raw))).strip()
+            if len(chunk) > 40:
+                text += ' ' + chunk
+            if len(text) > TEXT_LIMIT:
+                break
+    except Exception as exc:
+        meta = {'error': str(exc)[:60]}
+    return meta, text[:TEXT_LIMIT]
+
+
+def pdf_meta_and_text(path: str) -> tuple[dict[str, Any], str]:
+    meta: dict[str, Any] = {}
+    text = ''
+    try:
+        # poppler, not Calibre, so deliberately without the Calibre environment.
+        out = subprocess.run(['pdfinfo', path], capture_output=True, text=True, timeout=40).stdout
+        for line in out.splitlines():
+            if ':' in line:
+                key, value = line.split(':', 1)
+                meta[key.strip()] = value.strip()
+        raw = subprocess.run(
+            ['pdftotext', '-f', '1', '-l', str(PDF_PAGES), path, '-'],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        ).stdout
+        text = re.sub(r'\s+', ' ', raw).strip()[:TEXT_LIMIT]
+    except Exception as exc:
+        meta = {'error': str(exc)[:60]}
+    return meta, text
+
+
+def run(out_dir: str, root: str | None = None) -> list[tuple[str, int]]:
+    """Write one JSON per top-level category. Returns (filename, count) pairs."""
+    root = root or LIBRARY
+    folders: dict[str, list[dict[str, Any]]] = {}
+
+    for dirpath, _, filenames in os.walk(root):
+        for name in sorted(filenames):
+            path = os.path.join(dirpath, name)
+            ext = os.path.splitext(name)[1].lower()
+            if ext not in ('.epub', '.pdf'):
+                continue
+            relative = os.path.relpath(path, root)
+            facts = parse_filename(os.path.splitext(name)[0])
+            meta, text = epub_meta_and_text(path) if ext == '.epub' else pdf_meta_and_text(path)
+            folders.setdefault(relative.split(os.sep)[0], []).append(
+                {
+                    'file': relative,
+                    'ext': ext,
+                    'filename_author': facts.author,
+                    'filename_title': facts.title or facts.stem,
+                    'embedded': meta,
+                    'content_opening': text,
+                    'content_chars': len(text),
+                }
+            )
+
+    os.makedirs(out_dir, exist_ok=True)
+    written = []
+    for category, records in folders.items():
+        safe = _UNSAFE.sub('_', category).strip('_')
+        with open(os.path.join(out_dir, f'{safe}.json'), 'w', encoding='utf8') as fh:
+            json.dump(records, fh, indent=1, ensure_ascii=False)
+        written.append((f'{safe}.json', len(records)))
+    return written
