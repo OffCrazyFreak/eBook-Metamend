@@ -27,7 +27,10 @@ import subprocess
 import sys
 import zipfile
 
-CAL_ROOT = os.environ.get('CAL_ROOT', '/tmp/cal')
+# Matches src/ebook_metamend/config.py: not a shared temporary directory,
+# because these binaries are executed with LD_LIBRARY_PATH set to this root.
+_CACHE = os.environ.get('XDG_CACHE_HOME') or os.path.expanduser('~/.cache')
+CAL_ROOT = os.environ.get('CAL_ROOT') or os.path.join(_CACHE, 'ebook-metamend', 'calibre')
 EM = os.path.join(CAL_ROOT, 'bin', 'ebook-meta')
 ENV = dict(
     os.environ,
@@ -119,6 +122,9 @@ def remaining(path: str) -> list[str]:
 
 
 def main() -> int:
+    if len(sys.argv) < 2:
+        print('usage: strip.py <root> [--dry-run]')
+        return 2
     root = sys.argv[1]
     dry = '--dry-run' in sys.argv
 

@@ -42,6 +42,8 @@ def _report(index: int, total: int, book: Book, proposal: Proposal | None) -> No
         print(f"        series   -> {proposal.gains['series']} #{proposal.merged['sidx']}")
     if proposal.gains.get('tags'):
         print(f"        tags     -> {', '.join(proposal.gains['tags'][:8])}")
+    if proposal.unreadable:
+        print('        existing metadata could not be read, so nothing is proposed')
     for ext, ok, err in proposal.writes:
         print(f"        wrote {ext} {'ok' if ok else 'FAILED ' + err}")
 
@@ -60,7 +62,7 @@ def enrich_command(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--include-low',
         action='store_true',
-        help='also apply MED confidence results (not recommended)',
+        help='also apply MED and LOW confidence results (not recommended)',
     )
     args = parser.parse_args(argv)
     config.warn_if_unsafe_cal_root()
@@ -68,15 +70,29 @@ def enrich_command(argv: list[str] | None = None) -> int:
     selected = enrich.select(match=args.match, limit=args.limit, start=args.start)
     print(f"{len(selected)} unique books | mode: {'APPLY' if args.apply else 'DRY RUN'}\n")
 
+    written: list[Proposal] = []
+
+    def report_and_record(index, total, book, proposal):
+        _report(index, total, book, proposal)
+        if proposal is not None:
+            written.append(proposal)
+            # Rewritten after every book. The whole file each time is wasteful,
+            # but an interrupted --apply must not lose the record of what it
+            # already changed, and the write is atomic so it cannot truncate.
+            _write_json(args.out, [p.to_dict() for p in written])
+
     proposals = enrich.run(
         selected,
         do_apply=args.apply,
         include_low=args.include_low,
-        on_book=_report,
+        on_book=report_and_record,
     )
 
     high = sum(1 for p in proposals if p.conf == 'HIGH')
+    unreadable = sum(1 for p in proposals if p.unreadable)
     print(f'\nHIGH: {high}   MED/LOW (review): {len(proposals) - high}')
+    if unreadable:
+        print(f'{unreadable} book(s) had unreadable metadata and were left alone')
     _write_json(args.out, [p.to_dict() for p in proposals])
     print(f'proposals written to {args.out}')
     if not args.apply:
@@ -94,11 +110,10 @@ def epub_to_pdf_command(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config.warn_if_unsafe_cal_root()
 
-    results = epub_to_pdf.run(limit=args.limit, do_apply=args.apply)
     mode = 'APPLY (writes to PDFs)' if args.apply else 'DRY RUN (no writes)'
-    print(f'{results.total} EPUB+PDF pairs\nmode: {mode}\n')
-    for line in results.lines:
-        print(line)
+    print(f'mode: {mode}\n')
+    results = epub_to_pdf.run(limit=args.limit, do_apply=args.apply, on_line=print)
+    print(f'{results.total} EPUB+PDF pairs')
     verb = 'updated' if args.apply else 'would gain metadata'
     print(f'\n{results.changed}/{results.total} PDFs {verb}')
     return 0

@@ -43,6 +43,8 @@ class Proposal:
     src_titles: dict[str, str]
     #: The book's existing metadata. Kept for reporting, not serialised.
     current: dict[str, Any] = field(default_factory=dict, repr=False)
+    #: True when the existing metadata could not be read, so nothing is proposed.
+    unreadable: bool = field(default=False, repr=False)
     #: Populated only when a write was attempted. Not serialised.
     writes: list[tuple[str, bool, str]] = field(default_factory=list, repr=False)
 
@@ -173,7 +175,11 @@ def propose(book: Book) -> Proposal | None:
         if matching.sim(a.get('title', ''), facts.title) >= HALLUCINATION_FLOOR
     } or answers
 
-    current = calibre.read_metadata(book.any_path) or {}
+    # A failed read is not an empty book. Treating it as one makes every field
+    # look missing, and --apply would then overwrite a title, publisher and tags
+    # that were there all along. Propose nothing instead.
+    current = calibre.read_metadata(book.any_path)
+    unreadable = current is None
     merged = merge(surviving)
 
     return Proposal(
@@ -181,12 +187,13 @@ def propose(book: Book) -> Proposal | None:
         files=book.formats,
         conf=conf,
         sources=sorted(surviving),
-        gains=compute_gains(merged, current, conf),
+        gains={} if unreadable else compute_gains(merged, current, conf),
         merged=merged,
         fn_score=round(title_score, 3),
         au_score=round(author_score, 3),
         src_titles={name: a['title'] for name, a in surviving.items()},
-        current=current,
+        current=current or {},
+        unreadable=unreadable,
     )
 
 

@@ -152,16 +152,15 @@ def compare(before: dict, after: dict) -> dict:
             result['corrupt'].append(path)
             continue
 
-        content_diff = {
-            f: (b.get(f), a.get(f)) for f in CONTENT_FIELDS if f in b and b.get(f) != a.get(f)
-        }
+        # Compare every field, not only those the before-snapshot happened to
+        # have. Gating on `f in b` meant a file that could not be read before was
+        # reported unchanged no matter what happened to it afterwards.
+        content_diff = {f: (b.get(f), a.get(f)) for f in CONTENT_FIELDS if b.get(f) != a.get(f)}
         if content_diff:
             result['content_changed'].append({'path': path, 'diff': content_diff})
             continue
 
-        meta_diff = {
-            f: (b.get(f), a.get(f)) for f in META_FIELDS if f in b and b.get(f) != a.get(f)
-        }
+        meta_diff = {f: (b.get(f), a.get(f)) for f in META_FIELDS if b.get(f) != a.get(f)}
         if meta_diff:
             result['meta_changed'].append({'path': path, 'diff': meta_diff})
         else:

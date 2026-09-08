@@ -7,6 +7,7 @@ contents disagree, which no automated score reliably catches.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import os
@@ -16,7 +17,7 @@ import zipfile
 from typing import Any
 from xml.etree import ElementTree as ET
 
-from . import opf
+from . import calibre, opf
 from .config import LIBRARY
 from .library import parse_filename
 
@@ -36,9 +37,9 @@ def epub_meta_and_text(path: str) -> tuple[dict[str, Any], str]:
     try:
         z = zipfile.ZipFile(path)
         names = z.namelist()
-        opf_names = [n for n in names if n.lower().endswith('.opf')]
-        if opf_names:
-            root = ET.fromstring(z.read(opf_names[0]).decode('utf8', 'ignore'))
+        opf_name = calibre.opf_name(z)
+        if opf_name:
+            root = ET.fromstring(z.read(opf_name).decode('utf8', 'ignore'))
             record = opf.parse_root(root)
             meta = {
                 'title': record['title'],
@@ -48,7 +49,8 @@ def epub_meta_and_text(path: str) -> tuple[dict[str, Any], str]:
                 'desc_len': len(record['description']),
                 'series': record['series'],
             }
-        for name in sorted(n for n in names if n.lower().endswith(('.xhtml', '.html', '.htm'))):
+        documents = sorted(n for n in names if n.lower().endswith(('.xhtml', '.html', '.htm')))
+        for name in documents[:MAX_DOCUMENTS]:
             raw = _SCRIPT_OR_STYLE.sub(' ', z.read(name).decode('utf8', 'ignore'))
             chunk = re.sub(r'\s+', ' ', html.unescape(_TAG.sub(' ', raw))).strip()
             if len(chunk) > 40:
@@ -123,7 +125,8 @@ def run(out_dir: str, root: str | None = None) -> list[tuple[str, int]]:
         # "A & B" and "A - B" both flatten to "A_B", which would silently
         # overwrite one category's dump with another's.
         if used.setdefault(safe, category) != category:
-            safe = f'{safe}_{abs(hash(category)) % 10000:04d}'
+            digest = hashlib.sha256(category.encode('utf8')).hexdigest()[:8]
+            safe = f'{safe}_{digest}'
             used[safe] = category
         with open(os.path.join(out_dir, f'{safe}.json'), 'w', encoding='utf8') as fh:
             json.dump(records, fh, indent=1, ensure_ascii=False)

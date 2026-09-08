@@ -139,3 +139,63 @@ class TestBuildWriteArgs:
         args = build_write_args(gains, merge({}))
         for flag in ('-t', '--tags', '-c', '--publisher', '--isbn'):
             assert flag in args
+
+
+class TestUnreadableMetadata:
+    """A book whose existing metadata cannot be read must be left alone.
+
+    Treating a failed read as an empty book makes every field look missing, so
+    --apply would overwrite a title, publisher and tags that were there all
+    along. This is the one failure mode that silently destroys data.
+    """
+
+    def test_no_gains_are_computed_for_an_unreadable_book(self, monkeypatch):
+        from ebook_metamend import calibre, enrich
+        from ebook_metamend.library import Book
+
+        monkeypatch.setattr(calibre, 'read_metadata', lambda *a, **k: None)
+        monkeypatch.setattr(
+            enrich,
+            'query_sources',
+            lambda *a, **k: {
+                'google': answer(
+                    title='Atomic Habits',
+                    authors=['James Clear'],
+                    tags=['Self-Help'],
+                    publisher='Avery',
+                    isbn='123',
+                )
+            },
+        )
+        book = Book(stem='James Clear - Atomic Habits', formats={'.epub': '/nowhere.epub'})
+
+        proposal = enrich.propose(book)
+
+        assert proposal is not None
+        assert proposal.unreadable is True
+        assert proposal.gains == {}, 'must propose nothing when the book cannot be read'
+
+    def test_a_readable_empty_book_still_gains(self, monkeypatch):
+        """The contrast case: genuinely empty metadata is a normal thing to fill."""
+        from ebook_metamend import calibre, enrich
+        from ebook_metamend.library import Book
+
+        monkeypatch.setattr(calibre, 'read_metadata', lambda *a, **k: {})
+        monkeypatch.setattr(
+            enrich,
+            'query_sources',
+            lambda *a, **k: {
+                'google': answer(
+                    title='Atomic Habits',
+                    authors=['James Clear'],
+                    tags=['Self-Help'],
+                    publisher='Avery',
+                )
+            },
+        )
+        book = Book(stem='James Clear - Atomic Habits', formats={'.epub': '/nowhere.epub'})
+
+        proposal = enrich.propose(book)
+
+        assert proposal.unreadable is False
+        assert 'tags' in proposal.gains and 'publisher' in proposal.gains

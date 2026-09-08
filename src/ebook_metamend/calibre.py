@@ -35,7 +35,7 @@ CONTAINER = 'META-INF/container.xml'
 _CONTAINER_NS = '{urn:oasis:names:tc:opendocument:xmlns:container}'
 
 
-def _opf_name(archive: zipfile.ZipFile) -> str:
+def opf_name(archive: zipfile.ZipFile) -> str | None:
     """The OPF an EPUB actually declares.
 
     An EPUB may contain several .opf members, and zip order is not meaningful, so
@@ -51,7 +51,7 @@ def _opf_name(archive: zipfile.ZipFile) -> str:
             return declared
     except (KeyError, ET.ParseError):
         pass
-    return next(n for n in archive.namelist() if n.lower().endswith('.opf'))
+    return next((n for n in archive.namelist() if n.lower().endswith('.opf')), None)
 
 
 def read_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[str, Any] | None:
@@ -91,7 +91,10 @@ def read_epub_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[s
     """
     try:
         with zipfile.ZipFile(path) as z:
-            root = ET.fromstring(z.read(_opf_name(z)).decode('utf8', 'ignore'))
+            name = opf_name(z)
+            if name is None:
+                return None
+            root = ET.fromstring(z.read(name).decode('utf8', 'ignore'))
     except (OSError, KeyError, StopIteration, zipfile.BadZipFile, ET.ParseError):
         return None
     return opf.parse_root(root, bare_isbn_fallback=bare_isbn_fallback)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from . import calibre
@@ -50,6 +51,14 @@ class Results:
     total: int = 0
     changed: int = 0
     lines: list[str] = field(default_factory=list)
+
+
+def _emit(results: Results, on_line: Callable[[str], None] | None, line: str) -> None:
+    """Record and report a line as it happens. Buffering the whole run meant an
+    interrupted --apply lost the record of PDFs it had already written."""
+    results.lines.append(line)
+    if on_line:
+        on_line(line)
 
 
 def plan(epub_meta: dict, pdf_meta: dict) -> tuple[list[tuple[str, str, str]], list[str]]:
@@ -93,7 +102,13 @@ def plan(epub_meta: dict, pdf_meta: dict) -> tuple[list[tuple[str, str, str]], l
     return ops, args
 
 
-def run(*, limit: int = 0, do_apply: bool = False, root: str | None = None) -> Results:
+def run(
+    *,
+    limit: int = 0,
+    do_apply: bool = False,
+    root: str | None = None,
+    on_line: Callable[[str], None] | None = None,
+) -> Results:
     selected = pairs(root)
     if limit:
         selected = selected[:limit]
@@ -112,12 +127,14 @@ def run(*, limit: int = 0, do_apply: bool = False, root: str | None = None) -> R
             continue
 
         results.changed += 1
-        results.lines.append(f'[{index}/{len(selected)}] {os.path.basename(book.pdf)[:72]}')
+        _emit(results, on_line, f'[{index}/{len(selected)}] {os.path.basename(book.pdf)[:72]}')
         for field_name, was, now in ops:
-            results.lines.append(f'      {field_name:<12} {str(was)[:34]:<34} -> {str(now)[:60]}')
+            _emit(
+                results, on_line, f'      {field_name:<12} {str(was)[:34]:<34} -> {str(now)[:60]}'
+            )
         if do_apply:
             ok, stderr = calibre.write_metadata(book.pdf, args, timeout=90)
-            results.lines.append(f"      {'written' if ok else 'FAILED: ' + stderr[:80]}")
-        results.lines.append('')
+            _emit(results, on_line, f"      {'written' if ok else 'FAILED: ' + stderr[:80]}")
+        _emit(results, on_line, '')
 
     return results
