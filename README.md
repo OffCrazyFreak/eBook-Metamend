@@ -121,19 +121,22 @@ This is the reason for the whole design. A source that returns a plausible wrong
 Python 3.10+ and Calibre, available as command line tools. No system install needed:
 
 ```bash
-mkdir -p /tmp/cal
+CAL_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/ebook-metamend/calibre"
+mkdir -p "$CAL_ROOT"
 curl -fL -o /tmp/calibre.txz https://calibre-ebook.com/dist/linux64
-tar xJf /tmp/calibre.txz -C /tmp/cal
+tar xJf /tmp/calibre.txz -C "$CAL_ROOT"
 ```
 
 On some systems Calibre 9.x needs two environment variables or its binaries fail:
 
 ```bash
-export LD_LIBRARY_PATH=/tmp/cal/lib                 # else: libcalibre-launcher.so not found
-export OPENSSL_MODULES=/tmp/cal/lib/ossl-modules    # else: PDF output crashes in PoDoFo
+export LD_LIBRARY_PATH="$CAL_ROOT/lib"                 # else: libcalibre-launcher.so not found
+export OPENSSL_MODULES="$CAL_ROOT/lib/ossl-modules"    # else: PDF output crashes in PoDoFo
 ```
 
-The scripts set both internally. Set `CAL_ROOT` if you unpack Calibre somewhere other than `/tmp/cal`.
+The tool sets both internally. `CAL_ROOT` defaults to `~/.cache/ebook-metamend/calibre`; set it if you unpack Calibre elsewhere.
+
+It is deliberately not under `/tmp`. These binaries get executed with `LD_LIBRARY_PATH` pointed at the same root, so a world-writable location would let any local process run code as you. The tool warns if the root it is given is unsafe.
 
 ### Development
 
@@ -169,7 +172,7 @@ ebook-convert cleaned.epub out.pdf --paper-size letter
 
 ## Status
 
-Working, and used on a real library of a few hundred books. Currently a set of scripts rather than a package; a restructure into a `src/` layout is planned. Known rough edges, kept honest:
+Working, and used on a real library of a few hundred books. Packaged as a `src/` layout with tests. Known rough edges, kept honest:
 
 - Metadata is read by spawning a Calibre subprocess per book, roughly 350x slower than reading the OPF out of the EPUB zip directly
 - Fixed sleeps between source queries rather than adaptive backoff

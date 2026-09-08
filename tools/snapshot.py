@@ -77,6 +77,10 @@ def _epub(path: str) -> dict:
         for n in sorted(z.namelist()):
             if n.lower().endswith(('.xhtml', '.html', '.htm')):
                 text = re.sub(r'<[^>]+>', ' ', z.read(n).decode('utf8', 'ignore'))
+                # Hash the member name too, or swapping two chapters' contents
+                # produces an identical digest and reads as "unchanged".
+                h.update(n.encode('utf8'))
+                h.update(b'\0')
                 h.update(_norm_text(text).encode('utf8'))
         out['text_sha256'] = h.hexdigest()
     except Exception as e:
@@ -190,6 +194,9 @@ def main() -> int:
         return 2
     cmd = sys.argv[1]
     if cmd == 'take':
+        if len(sys.argv) < 4:
+            print('usage: snapshot.py take <root> <out.json>')
+            return 2
         root, out = sys.argv[2], sys.argv[3]
         snap = take(root)
         os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
@@ -198,6 +205,9 @@ def main() -> int:
         print(f'snapshot: {len(snap)} files -> {out}')
         return 0
     if cmd == 'compare':
+        if len(sys.argv) < 4:
+            print('usage: snapshot.py compare <before.json> <after.json>')
+            return 2
         with open(sys.argv[2]) as fh:
             before = json.load(fh)
         with open(sys.argv[3]) as fh:

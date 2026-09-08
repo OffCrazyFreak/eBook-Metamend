@@ -14,6 +14,7 @@ FIELDS = 'title,author_name,subject,publisher,isbn,first_publish_year'
 
 TIMEOUT = 25
 ATTEMPTS = 3
+RETRY_PAUSE = 3
 #: Subjects come back long and unranked, so only the head is useful.
 MAX_SUBJECTS = 25
 
@@ -37,7 +38,9 @@ def fetch_openlibrary(title: str, author: str) -> dict[str, Any] | None:
                 payload = json.load(response)
                 break
         except Exception:
-            time.sleep(3 * (attempt + 1))
+            # No point pausing after the last attempt; it only delays the caller.
+            if attempt < ATTEMPTS - 1:
+                time.sleep(RETRY_PAUSE * (attempt + 1))
 
     if not payload or not payload.get('docs'):
         return None

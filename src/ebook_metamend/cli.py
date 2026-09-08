@@ -8,7 +8,7 @@ import json
 import os
 import sys
 
-from . import enrich, epub_to_pdf, extract
+from . import config, enrich, epub_to_pdf, extract
 from .enrich import Proposal
 from .library import Book
 
@@ -63,6 +63,7 @@ def enrich_command(argv: list[str] | None = None) -> int:
         help='also apply MED confidence results (not recommended)',
     )
     args = parser.parse_args(argv)
+    config.warn_if_unsafe_cal_root()
 
     selected = enrich.select(match=args.match, limit=args.limit, start=args.start)
     print(f"{len(selected)} unique books | mode: {'APPLY' if args.apply else 'DRY RUN'}\n")
@@ -91,6 +92,7 @@ def epub_to_pdf_command(argv: list[str] | None = None) -> int:
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--limit', type=int, default=0)
     args = parser.parse_args(argv)
+    config.warn_if_unsafe_cal_root()
 
     results = epub_to_pdf.run(limit=args.limit, do_apply=args.apply)
     mode = 'APPLY (writes to PDFs)' if args.apply else 'DRY RUN (no writes)'

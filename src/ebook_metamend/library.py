@@ -65,11 +65,12 @@ class Book:
 
 
 def walk(root: str | None = None) -> dict[str, Book]:
-    """Group every book file under ``root`` by filename stem.
+    """Group every book file under ``root``, keyed by its root-relative stem.
 
-    Note the stem is the basename only, so two identically named files in
-    different category folders collapse into one entry. That matches the original
-    behaviour and has not bitten this library, but it is a real limitation.
+    Keying on the full relative path rather than the basename matters: two books
+    with the same filename in different category folders are different books. A
+    basename key silently merges them, which can pair one book's EPUB with
+    another's PDF and write metadata to the wrong file.
     """
     root = root or LIBRARY
     found: dict[str, Book] = {}
@@ -79,13 +80,17 @@ def walk(root: str | None = None) -> dict[str, Book]:
             ext = ext.lower()
             if ext not in BOOK_EXTENSIONS:
                 continue
-            found.setdefault(stem, Book(stem=stem)).formats[ext] = os.path.join(dirpath, name)
+            path = os.path.join(dirpath, name)
+            key = os.path.join(os.path.relpath(dirpath, root), stem)
+            found.setdefault(key, Book(stem=stem)).formats[ext] = path
     return found
 
 
 def books(root: str | None = None) -> list[Book]:
-    """Every stem, sorted. Includes stems with only one format."""
-    return [book for _, book in sorted(walk(root).items())]
+    """Every book, ordered by filename. Includes books with only one format."""
+    # Sorted by basename, not by the relative key, so ordering does not depend on
+    # which category folder a book happens to live in.
+    return sorted(walk(root).values(), key=lambda b: b.stem)
 
 
 def pairs(root: str | None = None) -> list[Book]:

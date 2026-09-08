@@ -65,18 +65,25 @@ def pdf_meta_and_text(path: str) -> tuple[dict[str, Any], str]:
     text = ''
     try:
         # poppler, not Calibre, so deliberately without the Calibre environment.
-        out = subprocess.run(['pdfinfo', path], capture_output=True, text=True, timeout=40).stdout
-        for line in out.splitlines():
+        info = subprocess.run(['pdfinfo', path], capture_output=True, text=True, timeout=40)
+        if info.returncode != 0:
+            return {'error': f'pdfinfo exit {info.returncode}: {info.stderr.strip()[:60]}'}, ''
+        for line in info.stdout.splitlines():
             if ':' in line:
                 key, value = line.split(':', 1)
                 meta[key.strip()] = value.strip()
-        raw = subprocess.run(
+        dump = subprocess.run(
             ['pdftotext', '-f', '1', '-l', str(PDF_PAGES), path, '-'],
             capture_output=True,
             text=True,
             timeout=90,
-        ).stdout
-        text = re.sub(r'\s+', ' ', raw).strip()[:TEXT_LIMIT]
+        )
+        # A nonzero exit means the text is partial or absent. Recording it as an
+        # empty opening would look like a book with no extractable text, which is
+        # a real and different condition worth telling apart.
+        if dump.returncode != 0:
+            meta['text_error'] = f'pdftotext exit {dump.returncode}'
+        text = re.sub(r'\s+', ' ', dump.stdout).strip()[:TEXT_LIMIT]
     except Exception as exc:
         meta = {'error': str(exc)[:60]}
     return meta, text
@@ -110,8 +117,14 @@ def run(out_dir: str, root: str | None = None) -> list[tuple[str, int]]:
 
     os.makedirs(out_dir, exist_ok=True)
     written = []
+    used: dict[str, str] = {}
     for category, records in folders.items():
-        safe = _UNSAFE.sub('_', category).strip('_')
+        safe = _UNSAFE.sub('_', category).strip('_') or 'root'
+        # "A & B" and "A - B" both flatten to "A_B", which would silently
+        # overwrite one category's dump with another's.
+        if used.setdefault(safe, category) != category:
+            safe = f'{safe}_{abs(hash(category)) % 10000:04d}'
+            used[safe] = category
         with open(os.path.join(out_dir, f'{safe}.json'), 'w', encoding='utf8') as fh:
             json.dump(records, fh, indent=1, ensure_ascii=False)
         written.append((f'{safe}.json', len(records)))

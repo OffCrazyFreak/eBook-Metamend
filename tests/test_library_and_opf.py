@@ -46,13 +46,30 @@ class TestWalk:
         (nested / 'B - Nested.epub').write_bytes(b'x')
         (nested / 'B - Nested.pdf').write_bytes(b'x')
         (tmp_path / 'Fiction' / 'cover.jpg').write_bytes(b'x')
+        # Same filename, different category. These are two different books.
+        (tmp_path / 'Poetry').mkdir()
+        (tmp_path / 'Poetry' / 'A - Both.epub').write_bytes(b'x')
         return tmp_path
 
     def test_finds_books_in_nested_folders(self, library):
-        assert 'B - Nested' in walk(str(library))
+        stems = [b.stem for b in books(str(library))]
+        assert 'B - Nested' in stems
 
     def test_ignores_files_that_are_not_books(self, library):
-        assert 'cover' not in walk(str(library))
+        assert not any(b.stem == 'cover' for b in books(str(library)))
+
+    def test_same_filename_in_two_folders_stays_two_books(self, library):
+        """Keying on the basename merged these, which could pair one book's EPUB
+        with another book's PDF and write metadata to the wrong file."""
+        found = walk(str(library))
+        assert len(found) == 4, sorted(found)
+        both = [b for b in books(str(library)) if b.stem == 'A - Both']
+        assert len(both) == 2
+        assert {tuple(sorted(b.formats)) for b in both} == {('.epub', '.pdf'), ('.epub',)}
+
+    def test_ordering_is_by_filename_not_by_folder(self, library):
+        stems = [b.stem for b in books(str(library))]
+        assert stems == sorted(stems)
 
     def test_books_includes_single_format_stems(self, library):
         stems = [b.stem for b in books(str(library))]
