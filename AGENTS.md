@@ -104,7 +104,8 @@ Do not treat these as bugs to fix mid-task. They are the backlog.
 - PDFs still need a Calibre subprocess to read. EPUBs go through `calibre.read_book_metadata`, which reads the zip directly.
 - Calibre splits subjects on commas at every entry point (`--tags`, `--from-opf`, all of them), so a tag containing a comma cannot be stored. `tags.reformat_name_heading` works around it for name headings only.
 - The hallucination filter runs after the scores are computed, so a reported `fn`/`au` can describe a different source set than the one that was merged.
-- Open Library times out under rapid queries and its failures are swallowed, so "no answer" can mean "the request failed".
+- Open Library is unreliable in practice (HTTP 500s, connection resets, TLS timeouts). It now reports failures instead of swallowing them, but it still answers rarely.
+- `matching.norm` strips everything outside `[a-z0-9 ]`, so a Cyrillic, Greek or CJK title normalises to an empty string and scores 0.0. Those books can never reach HIGH.
 
 ## Commit message
 

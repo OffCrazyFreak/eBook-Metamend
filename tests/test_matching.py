@@ -98,14 +98,18 @@ class TestSim:
 
 
 class TestBestScores:
-    def test_best_author_searches_within_each_source(self):
-        assert best_author_score([['Nobody', 'James Clear']], 'James Clear') == 1.0
+    def test_the_best_of_one_source_s_authors_wins(self):
+        assert best_author_score(['Nobody', 'James Clear'], 'James Clear') == 1.0
 
-    def test_no_sources_scores_zero(self):
+    def test_no_authors_scores_zero(self):
         assert best_author_score([], 'James Clear') == 0.0
 
-    def test_empty_author_list_is_not_a_match(self):
-        assert best_author_score([[]], 'James Clear') == 0.0
+    def test_a_bare_surname_is_not_a_full_author_match(self):
+        """sim() scores authors too, so containment must stay strictly below the
+        author threshold or "Smith" would vouch for "Zadie Smith"."""
+        from ebook_metamend.matching import AUTHOR_STRONG
+
+        assert best_author_score(['Smith'], 'Zadie Smith') < AUTHOR_STRONG
 
 
 class TestDerivedWorks:

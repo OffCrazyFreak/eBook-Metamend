@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .. import calibre, opf
+from .errors import SourceUnavailable
 
 #: Calibre plugin names, as ``fetch-ebook-metadata -p`` expects them.
 KOBO_PLUGIN = 'Kobo Metadata'
@@ -17,16 +18,14 @@ GOOGLE_PLUGIN = 'Google'
 DEFAULT_TIMEOUT = 18
 
 
-class SourceUnavailable(RuntimeError):
-    """A configured plugin is not installed, so this source cannot answer.
-
-    Raised rather than returning None. Silence here looks exactly like "no such
-    book", which is how a missing plugin went unnoticed while every decision was
-    quietly made on a single source.
-    """
-
-
 def require_plugin(plugin: str) -> None:
+    """Refuse to pretend a missing plugin simply had no answer.
+
+    Fails open when the plugin list is empty, because that means the listing
+    itself did not work (calibre-customize missing, or output we could not
+    parse). Guessing "unavailable" from a failed probe would be worse than
+    trying and getting a real error.
+    """
     available = calibre.installed_metadata_plugins()
     if available and plugin not in available:
         raise SourceUnavailable(

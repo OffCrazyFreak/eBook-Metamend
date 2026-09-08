@@ -23,6 +23,7 @@ from typing import Any
 
 from . import cache
 from .calibre_plugin import fetch_google, fetch_kobo
+from .errors import SourceError, SourceUnavailable
 from .openlibrary import fetch_openlibrary
 
 
@@ -77,6 +78,8 @@ __all__ = [
     'SOURCES',
     'Pacer',
     'Source',
+    'SourceError',
+    'SourceUnavailable',
     'cache',
     'fetch_google',
     'fetch_kobo',

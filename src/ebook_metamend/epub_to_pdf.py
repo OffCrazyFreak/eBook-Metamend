@@ -118,7 +118,7 @@ def run(
         # The bare-ISBN fallback is enabled here and not in the enricher, which is
         # a real difference in what counts as an ISBN, preserved deliberately.
         epub_meta = calibre.read_book_metadata(book.epub, bare_isbn_fallback=True) or {}
-        pdf_meta = calibre.read_metadata(book.pdf, bare_isbn_fallback=True) or {}
+        pdf_meta = calibre.read_book_metadata(book.pdf, bare_isbn_fallback=True) or {}
         if not epub_meta:
             continue
 

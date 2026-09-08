@@ -9,7 +9,8 @@ import pytest
 
 from ebook_metamend import enrich
 from ebook_metamend.sources import Pacer, Source
-from ebook_metamend.sources.calibre_plugin import SourceUnavailable, require_plugin
+from ebook_metamend.sources.calibre_plugin import require_plugin
+from ebook_metamend.sources.errors import SourceUnavailable
 
 
 @pytest.fixture(autouse=True)

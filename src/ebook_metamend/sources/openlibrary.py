@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-import sys
 import time
 import urllib.parse
 import urllib.request
 from typing import Any
+
+from .errors import SourceError
 
 SEARCH_URL = 'https://openlibrary.org/search.json'
 USER_AGENT = 'ebook-metamend/1.0 (personal library)'
@@ -48,15 +49,13 @@ def fetch_openlibrary(title: str, author: str) -> dict[str, Any] | None:
                 time.sleep(RETRY_PAUSE * (attempt + 1))
 
     if payload is None:
-        # Say why. Open Library returns 500s, resets connections and times out
-        # its TLS handshake often enough to matter, and reporting that as "no
-        # such book" is how a source silently stops contributing.
-        print(
-            f'openlibrary: {title!r} failed after {ATTEMPTS} attempts '
-            f'({type(last_error).__name__}: {str(last_error)[:60]})',
-            file=sys.stderr,
+        # Raised, not returned as None. Open Library returns 500s, resets
+        # connections and times out its TLS handshake often enough to matter,
+        # and reporting that as "no such book" is how a source silently stops
+        # contributing.
+        raise SourceError(
+            f'{ATTEMPTS} attempts failed ({type(last_error).__name__}: {str(last_error)[:80]})'
         )
-        return None
 
     if not payload.get('docs'):
         return None
