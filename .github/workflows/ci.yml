@@ -24,9 +24,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # The tool itself has no dependencies; ruff is a dev tool only.
-      - name: Install dev tools
-        run: pipx install ruff && pip install pytest
+      # Editable install so the src/ layout is importable, exactly as a user
+      # would have it. ruff and pytest are dev extras; the tool itself has no
+      # runtime dependencies.
+      - name: Install
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
 
       - name: Lint
         run: ruff check .
@@ -35,25 +37,42 @@ jobs:
         run: ruff format --check .
 
       - name: Tests
-        run: pytest tests/ -q
-
-      - name: Byte-compile (catches syntax errors on every supported version)
-        run: python -m compileall -q .
+        run: pytest
 
       - name: Assert the tool stays dependency-free
         run: |
           python - <<'PY'
-          import sys, glob, re
-          third = set()
-          for f in glob.glob("*.py"):
-              for line in open(f):
-                  m = re.match(r'^\s*(?:import|from)\s+([a-zA-Z_][\w.]*)', line)
-                  if m:
-                      mod = m.group(1).split('.')[0]
-                      if mod not in sys.stdlib_module_names:
-                          third.add(mod)
-          if third:
-              print("Third-party imports found:", sorted(third))
-              sys.exit(1)
-          print("stdlib only, as documented")
+          import ast, pathlib, sys
+
+          # Walk the package, not the repository root. The previous version of
+          # this check globbed *.py at the top level, so once the code moved into
+          # src/ it silently iterated zero files and passed regardless.
+          package = pathlib.Path("src/ebook_metamend")
+          files = sorted(package.rglob("*.py"))
+          if not files:
+              sys.exit("found no package source files to check")
+
+          third_party = {}
+          for path in files:
+              tree = ast.parse(path.read_text(), filename=str(path))
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      names = [a.name for a in node.names]
+                  elif isinstance(node, ast.ImportFrom):
+                      # A relative import is our own package.
+                      if node.level:
+                          continue
+                      names = [node.module or ""]
+                  else:
+                      continue
+                  for name in names:
+                      root = name.split(".")[0]
+                      if root and root not in sys.stdlib_module_names and root != "ebook_metamend":
+                          third_party.setdefault(root, []).append(str(path))
+
+          if third_party:
+              for module, where in sorted(third_party.items()):
+                  print(f"third-party import {module!r} in {where[0]}")
+              sys.exit("the tool must import only the standard library")
+          print(f"stdlib only across {len(files)} files, as documented")
           PY

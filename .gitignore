@@ -8,11 +8,11 @@ validation.txt
 
 # --- Python ---
 __pycache__/
+.venv/
 *.py[cod]
 *.egg-info/
 build/
 dist/
-.venv/
 venv/
 .env
 

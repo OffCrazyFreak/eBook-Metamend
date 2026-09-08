@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ebook-metamend"
+dynamic = ["version"]
+description = "Repair ebook metadata without letting a metadata source lie to you"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Jakov Jakovac" }]
+keywords = ["ebook", "epub", "pdf", "metadata", "calibre", "library"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Text Processing :: Markup",
+]
+
+# No runtime dependencies, on purpose. Metadata I/O goes through the Calibre
+# command line tools, which are an external program rather than a Python package.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/OffCrazyFreak/eBook-Metamend"
+Issues = "https://github.com/OffCrazyFreak/eBook-Metamend/issues"
+
+[project.scripts]
+ebook-metamend = "ebook_metamend.cli:enrich_command"
+ebook-metamend-epub-to-pdf = "ebook_metamend.cli:epub_to_pdf_command"
+ebook-metamend-extract = "ebook_metamend.cli:extract_command"
+
+[tool.hatch.version]
+path = "src/ebook_metamend/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ebook_metamend"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "tests", "tools"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes: unused imports and names, undefined names
+  "W",   # pycodestyle warnings
+  "I",   # import sorting
+  "UP",  # pyupgrade
+  "B",   # bugbear: likely bugs
+  "A",   # builtin shadowing
+  "C4",  # comprehension simplifications
+]
+ignore = [
+  "E501",  # line length is the formatter's job
+]
+
+[tool.ruff.format]
+quote-style = "preserve"

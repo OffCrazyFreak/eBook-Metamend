@@ -29,11 +29,12 @@ Dry run is the default. Nothing is ever blanked. Every run leaves a JSON record 
 ## Quick start
 
 ```bash
+pip install -e .
 export EBOOK_LIBRARY=~/eBooks
 
-python3 2_online_enrich.py                                   # preview the whole library
-python3 2_online_enrich.py --match "Digital Minimalism"      # preview one book
-python3 2_online_enrich.py --match "Digital Minimalism" --apply
+ebook-metamend                                   # preview the whole library
+ebook-metamend --match "Digital Minimalism"      # preview one book
+ebook-metamend --match "Digital Minimalism" --apply
 ```
 
 Options: `--apply`, `--match`, `--limit`, `--start`, `--out`, `--include-low`.
@@ -51,20 +52,35 @@ Options: `--apply`, `--match`, `--limit`, `--start`, `--out`, `--include-low`.
 
 ## Tech stack
 
-- **Language:** Python 3.10+, standard library only (`urllib`, `xml.etree`, `difflib`, `argparse`, `subprocess`, `zipfile`)
+- **Language:** Python 3.10+, standard library only, `src/` layout (`urllib`, `xml.etree`, `difflib`, `argparse`, `subprocess`, `zipfile`)
 - **Metadata I/O:** [Calibre](https://calibre-ebook.com/) command line tools, used as external processes
 - **Sources:** Kobo and Google Books via Calibre plugins, Open Library via its public search API
-- **Tooling:** ruff, pytest, GitHub Actions
+- **Tooling:** ruff, pytest, GitHub Actions. CI enforces the no-dependencies promise
 
 Calibre is used rather than a native Python library because it edits EPUB and PDF metadata **in place**. Libraries that rebuild the EPUB archive can drop the `mimetype` entry, reorder the manifest or lose XML namespaces.
 
-## The scripts
+## The commands
 
-| Script | Purpose |
-| ------ | ------- |
-| `2_online_enrich.py` | The main tool. Queries three sources, scores, proposes, optionally applies |
-| `1_epub_to_pdf.py` | Copies richer EPUB metadata onto its PDF twin. Local only, no network |
-| `extract.py` | Dumps filename, embedded metadata and opening text per book to `spotcheck/` |
+| Command | Purpose |
+| ------- | ------- |
+| `ebook-metamend` | The main tool. Queries three sources, scores, proposes, optionally applies |
+| `ebook-metamend-epub-to-pdf` | Copies richer EPUB metadata onto its PDF twin. Local only, no network |
+| `ebook-metamend-extract` | Dumps filename, embedded metadata and opening text per book |
+
+Layout:
+
+```
+src/ebook_metamend/
+├── matching.py    the safety model: norm, sim, classify
+├── enrich.py      the pipeline, returns values
+├── cli.py         argument parsing and printing only
+├── library.py     finding books, reading what the filename claims
+├── opf.py         one OPF parser
+├── calibre.py     ebook-meta and fetch-ebook-metadata wrappers
+├── config.py      paths and the Calibre environment
+└── sources/       kobo, google, openlibrary, and the record/replay cache
+tools/             snapshot, strip and replay harnesses for measuring a change
+```
 
 ## How the matching works
 
@@ -105,28 +121,46 @@ This is the reason for the whole design. A source that returns a plausible wrong
 Python 3.10+ and Calibre, available as command line tools. No system install needed:
 
 ```bash
-mkdir -p /tmp/cal
+CAL_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/ebook-metamend/calibre"
+mkdir -p "$CAL_ROOT"
 curl -fL -o /tmp/calibre.txz https://calibre-ebook.com/dist/linux64
-tar xJf /tmp/calibre.txz -C /tmp/cal
+tar xJf /tmp/calibre.txz -C "$CAL_ROOT"
 ```
 
 On some systems Calibre 9.x needs two environment variables or its binaries fail:
 
 ```bash
-export LD_LIBRARY_PATH=/tmp/cal/lib                 # else: libcalibre-launcher.so not found
-export OPENSSL_MODULES=/tmp/cal/lib/ossl-modules    # else: PDF output crashes in PoDoFo
+export LD_LIBRARY_PATH="$CAL_ROOT/lib"                 # else: libcalibre-launcher.so not found
+export OPENSSL_MODULES="$CAL_ROOT/lib/ossl-modules"    # else: PDF output crashes in PoDoFo
 ```
 
-The scripts set both internally. Set `CAL_ROOT` if you unpack Calibre somewhere other than `/tmp/cal`.
+The tool sets both internally. `CAL_ROOT` defaults to `~/.cache/ebook-metamend/calibre`; set it if you unpack Calibre elsewhere.
+
+It is deliberately not under `/tmp`. These binaries get executed with `LD_LIBRARY_PATH` pointed at the same root, so a world-writable location would let any local process run code as you. The tool warns if the root it is given is unsafe.
 
 ### Development
 
 ```bash
+pip install -e ".[dev]"
 ruff check . && ruff format --check .
-pytest tests/ -q
+pytest
 ```
 
-The test suite covers the title matching only. It needs no network, no Calibre and no ebook files, and runs in well under a second.
+The tests cover the matching model, the gain rules, filename and OPF parsing, and
+junk-title detection. They need no network, no Calibre and no ebook files, and run
+in well under a second.
+
+Source responses can be recorded once and replayed offline, which makes a run
+deterministic and turns 63 seconds per book into milliseconds:
+
+```bash
+METAMEND_CACHE_MODE=record METAMEND_FIXTURES=./fixtures ebook-metamend --match "Some Book"
+METAMEND_CACHE_MODE=replay METAMEND_FIXTURES=./fixtures ebook-metamend --match "Some Book"
+```
+
+`tools/snapshot.py` records a library's metadata and content hashes before and
+after a run and classifies every file as unchanged, meta-changed, content-changed
+or corrupt, so a change can be proven not to have damaged anything.
 
 ## Notes on watermarked files
 
@@ -138,12 +172,11 @@ ebook-convert cleaned.epub out.pdf --paper-size letter
 
 ## Status
 
-Working, and used on a real library of a few hundred books. Currently a set of scripts rather than a package; a restructure into a `src/` layout is planned. Known rough edges, kept honest:
+Working, and used on a real library of a few hundred books. Packaged as a `src/` layout with tests. Known rough edges, kept honest:
 
-- The confidence classifier is duplicated rather than shared, so it can drift
 - Metadata is read by spawning a Calibre subprocess per book, roughly 350x slower than reading the OPF out of the EPUB zip directly
 - Fixed sleeps between source queries rather than adaptive backoff
-- Script names start with digits, so they cannot be imported normally
+- `ebook-meta` splits `--tags` on commas, so a tag containing one is torn in two on write
 
 ## Contributing
 

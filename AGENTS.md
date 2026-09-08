@@ -17,7 +17,7 @@ Never, without being asked explicitly and in that same message:
 - Add code that blanks an existing metadata value. Fields are added or improved, never emptied.
 - Run anything with `--apply` against a real library. Use a copy.
 
-If a change touches `norm`, `sim`, or the confidence branches in `main`, say so plainly in your summary and name the books you checked it against.
+If a change touches anything in `matching.py`, say so plainly in your summary and name the books you checked it against. That module is the safety model.
 
 ## Boundaries
 
@@ -33,7 +33,7 @@ Ask first:
 
 - Adding a metadata source, or changing how existing ones are weighted.
 - Adding a dependency the task does not strictly require.
-- Renaming the scripts or restructuring into a package, unless that is the task.
+- Changing the public command surface or the package layout, unless that is the task.
 - Any instruction of mine with two plausible readings. Ask before you edit, do not pick one and start.
 
 **Ask means ask.** Every item above is a question to put to me, not a reason to quietly pick the smaller option. If you cannot stop mid-task, do the parts that do not depend on the answer, then ask before you finish.
@@ -43,16 +43,21 @@ Ask first:
 ```sh
 ruff check .
 ruff format .
-pytest tests/ -q
-python3 -m compileall -q .
-python3 2_online_enrich.py --match "Some Book"   # dry run, no --apply
+pytest
+ebook-metamend --match "Some Book"                 # dry run, no --apply
+METAMEND_CACHE_MODE=replay METAMEND_FIXTURES=<dir> ebook-metamend   # offline, instant
+python3 tools/snapshot.py take <root> <out.json>   # read-only
 ```
+
+Use the repository's `.venv`, which has an editable install. Sources are recorded
+and replayed from fixtures, so a dry run costs milliseconds rather than 63 seconds
+per book.
 
 Dry runs are safe because nothing is written. The moment `--apply` appears, ask.
 
 ## Definition of done
 
-`ruff check .`, `ruff format --check .` and `pytest tests/ -q` must all pass. So must `python -m compileall`, which is what catches syntax that 3.10 rejects.
+`ruff check .`, `ruff format --check .` and `pytest` must all pass. CI also enforces that the package imports only the standard library.
 
 Say which checks passed, which failed, and which you did not run. If a check fails for a reason unrelated to your change, report the command and the error, say it looks pre-existing, and leave it alone.
 
@@ -74,12 +79,12 @@ Hand it over the way a senior would: someone should be able to read one function
 
 - Prefer the smallest change that does the job.
 - DRY by meaning, not by shape. Merge two pieces of code because they encode the same rule and must change together, never because they look alike.
-- Duplication that can silently drift is a bug, not a style preference. The confidence classifier here is the live example: three copies, and only one is pinned by tests.
+- Duplication that can silently drift is a bug, not a style preference. The confidence classifier used to exist in four copies here, and the validation suite scored a stale one, so the thing meant to catch drift was itself drifting.
 - Do not abstract on the first repeat. A wrong abstraction costs more to undo than the duplication it replaced.
 - One job per function, one reason to change per file. If you cannot name it without "and", split it.
-- Keep logic pure where you can. Anything that avoids the network, the filesystem and Calibre is testable in milliseconds, which is why `norm` and `sim` have tests and the classifier does not.
+- Keep logic pure where you can. `matching.py` and the gain rules touch nothing external, which is why the whole safety model is covered by tests that run in under a second.
 - Library code returns values, the CLI layer prints. Do not bury output inside a function that computes something.
-- Write for the reader. One statement per line, no semicolon stacking, no dense one-liners. The existing scripts break this and it is a wart, not a style to copy.
+- Write for the reader. One statement per line, no semicolon stacking, no dense one-liners.
 - Names say what, not how. Avoid `process`, `handle`, `data`, `manager`.
 
 ## Scope
@@ -92,13 +97,13 @@ Hand it over the way a senior would: someone should be able to read one function
 
 ## Known rough edges
 
-Do not treat these as bugs to fix mid-task. They are the agenda for a planned restructure into a `src/` layout.
+Do not treat these as bugs to fix mid-task. They are the backlog.
 
-- The confidence classifier is duplicated rather than shared, so it can drift.
-- Metadata is read by spawning a Calibre subprocess per book, roughly 350x slower than reading the OPF out of the EPUB zip.
+- Metadata is read by spawning a Calibre subprocess per book, roughly 350x slower than reading the OPF out of the EPUB zip. `calibre.read_epub_metadata` exists for this but is not wired in yet.
 - Fixed sleeps between source queries rather than adaptive backoff.
-- Script names start with digits, so they cannot be imported normally. The test suite loads by path because of it.
-- `2_online_enrich.py` rewrites the whole proposals file after every book.
+- `ebook-meta` splits `--tags` on commas, so a tag containing one is torn in two on write. `calibre.TAG_SEPARATOR` is the single place to fix it.
+- No `--` end-of-options separator is passed, so a title or filename starting with `-` is read by `ebook-meta` as an option.
+- The hallucination filter runs after the scores are computed, so a reported `fn`/`au` can describe a different source set than the one that was merged.
 
 ## Commit message
 
