@@ -18,11 +18,15 @@ Three sources are queried per book. Every answer is scored against the filename 
 
 | Confidence | Condition | Written? |
 | ---------- | --------- | -------- |
-| **HIGH** | a source's title matches the filename (>=0.85) **and** its author matches (>=0.7) | yes |
-| **MED** | weaker evidence, including two sources merely agreeing with each other | only with `--include-low` |
+| **HIGH** | **two** sources each match the filename's title (>=0.85) **and** its author (>=0.7) **on their own**, and agree with each other | yes |
+| **MED** | one source manages that, or the evidence is weaker | only with `--include-low` |
 | **LOW** | anything else | no |
 
-Two sources agreeing with each other is deliberately **not** enough. They can be wrong together, and one of them invents matches when it has none.
+**One source is never enough.** Measured on a real library, a single source returned an abridgement (`On Liberty (Squashed Edition)`), a translation (`Atomic Habits (Tamil)`) and a different book entirely (`Revenge of the Tipping Point`) for three correctly named files. Each would have been written. A second source disagreed with all three.
+
+Both signals must also come from the *same* source. Taking the best title from one answer and the best author from another can manufacture confidence that neither source actually had.
+
+The cost is deliberate: a book only one source knows, typically self-published or niche, cannot reach HIGH and needs `--include-low`.
 
 Dry run is the default. Nothing is ever blanked. Every run leaves a JSON record of what it decided and why.
 
@@ -41,8 +45,9 @@ Options: `--apply`, `--match`, `--limit`, `--start`, `--out`, `--include-low`.
 
 ## Features
 
-- Three metadata sources per book (Kobo, Google Books, Open Library) with per-source scoring
-- Filename-anchored confidence model that rejects plausible-but-wrong matches
+- Three metadata sources per book (Kobo, Google Books, Open Library), each scored on its own
+- Filename-anchored confidence model requiring two independent sources to agree
+- Rejects adaptations, translations and omnibus false positives
 - Title similarity that understands subtitles and refuses omnibus false positives
 - Additive only: a field is written when it is missing, or when the incoming value is strictly better
 - Dry run by default, full proposal record written every run
@@ -100,19 +105,23 @@ Naive string similarity fails on real book titles, so two cases are handled spec
 - **Prefix containment is legitimate.** "Digital Minimalism" vs "Digital Minimalism: Choosing a Focused Life in a Noisy World" is the same book, main title plus subtitle. Scored 0.95.
 - **Non-prefix containment is suspicious.** An omnibus titled "The Happiest Baby on the Block and The Happiest Toddler on the Block" contains the title of a book it is not. Capped at 0.70, deliberately below the threshold that would let it be written.
 
-Both cases are pinned by the test suite, because they are the difference between a repaired library and a ruined one.
+A third case is handled separately. **Adaptations and translations are different books that share a title**, so `On Liberty (Squashed Edition)`, `Atomic Habits (Tamil)`, `The Alchemist Graphic Novel` and `Man's Search for Meaning adapted for Young Adults` are capped at 0.60, below the writing threshold. Every one of those was returned by a live source for the correctly named file.
+
+All three cases are pinned by the test suite, because they are the difference between a repaired library and a ruined one.
 
 ## What the sources are actually like
 
 Measured across a few hundred books:
 
-| Source | Behaviour |
-| ------ | --------- |
-| Kobo | Best coverage, but silently invents matches. Never trust it alone |
-| Google Books | Misses more, fails loudly. Reliable when it answers |
-| Open Library | Same, thinner catalogue |
-| Goodreads | Blocks after a single request |
-| Amazon | Returns SEO spam |
+| Source | Answered | Behaviour |
+| ------ | -------- | --------- |
+| Kobo | 10/10 | Best coverage and the most accurate on editions. Invents a match when it has none, so never trust it alone |
+| Google Books | 8/10 | Answers confidently with adaptations, translations and sequels. Needs a second opinion |
+| Open Library | varies | Thinner catalogue, and prone to SSL timeouts under rapid queries |
+| Goodreads | - | Blocks after a single request. Not used |
+| Amazon | - | Returns SEO spam. Not used |
+
+Kobo comes from a plugin that is **not** installed with Calibre by default. Without it the tool silently runs on one source, which is exactly how the three failures above happened. It now refuses quietly to pretend: a missing plugin is reported, not treated as "no such book".
 
 This is the reason for the whole design. A source that returns a plausible wrong answer is far more dangerous than one that returns nothing.
 
@@ -134,7 +143,14 @@ export LD_LIBRARY_PATH="$CAL_ROOT/lib"                 # else: libcalibre-launch
 export OPENSSL_MODULES="$CAL_ROOT/lib/ossl-modules"    # else: PDF output crashes in PoDoFo
 ```
 
-The tool sets both internally. `CAL_ROOT` defaults to `~/.cache/ebook-metamend/calibre`; set it if you unpack Calibre elsewhere.
+Then add the Kobo metadata plugin, which Calibre does not ship:
+
+```bash
+curl -fsSL -o /tmp/kobo-metadata.zip https://plugins.calibre-ebook.com/355983.zip
+"$CAL_ROOT/bin/calibre-customize" -a /tmp/kobo-metadata.zip
+```
+
+The tool sets both variables internally. `CAL_ROOT` defaults to `~/.cache/ebook-metamend/calibre`; set it if you unpack Calibre elsewhere.
 
 It is deliberately not under `/tmp`. These binaries get executed with `LD_LIBRARY_PATH` pointed at the same root, so a world-writable location would let any local process run code as you. The tool warns if the root it is given is unsafe.
 
@@ -174,9 +190,9 @@ ebook-convert cleaned.epub out.pdf --paper-size letter
 
 Working, and used on a real library of a few hundred books. Packaged as a `src/` layout with tests. Known rough edges, kept honest:
 
-- Metadata is read by spawning a Calibre subprocess per book, roughly 350x slower than reading the OPF out of the EPUB zip directly
-- Fixed sleeps between source queries rather than adaptive backoff
-- `ebook-meta` splits `--tags` on commas, so a tag containing one is torn in two on write
+- PDFs still need a Calibre subprocess to read; EPUBs are read from the zip directly
+- Calibre splits subjects on commas at every entry point, so a tag containing one cannot be stored at all. Name headings are rewritten to avoid it; other commas still split
+- Open Library times out under rapid queries more often than it should
 
 ## Contributing
 

@@ -11,9 +11,10 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import calibre, matching
+from . import calibre, matching, tags
 from .library import Book, books
-from .sources import SOURCES, cache
+from .sources import SOURCES, Pacer, cache
+from .sources.calibre_plugin import SourceUnavailable
 
 #: A merged title has to beat the existing one by more than this to be worth
 #: writing. Stops churn on trivially different punctuation.
@@ -68,27 +69,55 @@ class Proposal:
         }
 
 
+#: Sources that could not be reached at all, as opposed to having no answer.
+#: Collected across a run so it can be reported once rather than per book.
+unavailable_sources: dict[str, str] = {}
+
+#: Shared across a run so back-off carries between books.
+_pacer = Pacer()
+
+
 def query_sources(title: str, author: str, *, pause: bool = True) -> dict[str, dict[str, Any]]:
-    """Ask every source about one book. Absent and failed sources are omitted."""
+    """Ask every source about one book. Sources with no answer are omitted.
+
+    A source that cannot run at all is recorded separately. Folding it in with
+    "no answer" is how a missing plugin stayed invisible while it silently
+    reduced a three-source cross-check to a single source.
+    """
     answers: dict[str, dict[str, Any]] = {}
     for source in SOURCES:
-        answer = source.fetch(title, author)
+        if source.name in unavailable_sources:
+            continue
+        try:
+            answer = source.fetch(title, author)
+        except SourceUnavailable as exc:
+            unavailable_sources[source.name] = str(exc)
+            continue
         if answer:
             answers[source.name] = answer
+        _pacer.record(source.name, bool(answer))
         if pause and not cache.replaying():
-            time.sleep(source.pause)
+            time.sleep(_pacer.delay(source))
     return answers
 
 
-def score(answers: dict[str, dict[str, Any]], facts) -> tuple[float, float, str]:
-    """Score every answer against the filename, and classify the result."""
-    titles = [a['title'] for a in answers.values() if a.get('title')]
-    title_score = matching.best_title_score(titles, facts.title)
-    author_score = matching.best_author_score(
-        [a.get('authors') or [] for a in answers.values()], facts.author
-    )
-    agreements = matching.count_agreements(titles)
-    return title_score, author_score, matching.classify(title_score, author_score, agreements)
+def score(answers: dict[str, dict[str, Any]], facts) -> tuple[list[matching.SourceScore], str]:
+    """Score each source's answer on its own, then classify the set.
+
+    Scoring per source rather than taking the best title and the best author
+    across all of them is the point: those maxima can come from two different
+    answers, neither of which identified the book.
+    """
+    scores = [
+        matching.SourceScore(
+            name=name,
+            title=answer.get('title', ''),
+            title_score=matching.sim(answer.get('title', ''), facts.title),
+            author_score=matching.best_author_score([answer.get('authors') or []], facts.author),
+        )
+        for name, answer in answers.items()
+    ]
+    return scores, matching.classify(scores)
 
 
 def merge(answers: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -98,9 +127,19 @@ def merge(answers: dict[str, dict[str, Any]]) -> dict[str, Any]:
     union, because sources cover different vocabularies.
     """
     values = list(answers.values())
+
+    # Longest-wins is right for subtitles and wrong for adaptations: "On Liberty
+    # (Squashed Edition)" is longer than "On Liberty", so a plain max() picks the
+    # abridgement over the real book even when another source got it right.
+    # Prefer titles that are not derived works, and only fall back if every
+    # source offered one.
+    titles = [a['title'] for a in values if a.get('title')]
+    genuine = [t for t in titles if not matching.looks_derived(t)]
     return {
-        'title': max((a['title'] for a in values), key=len, default=''),
-        'tags': sorted({t for a in values for t in (a.get('tags') or [])})[:MAX_MERGED_TAGS],
+        'title': max(genuine or titles, key=len, default=''),
+        'tags': tags.clean(sorted({t for a in values for t in (a.get('tags') or [])}))[
+            :MAX_MERGED_TAGS
+        ],
         'description': max((a.get('description') or '' for a in values), key=len, default=''),
         'series': next((a['series'] for a in values if a.get('series')), None),
         'sidx': next((a['sidx'] for a in values if a.get('sidx')), None),
@@ -164,7 +203,11 @@ def propose(book: Book) -> Proposal | None:
     if not answers:
         return None
 
-    title_score, author_score, conf = score(answers, facts)
+    scores, conf = score(answers, facts)
+    # Reported figures stay the best-of, so the output still reads as one number
+    # per book, but they no longer decide anything.
+    title_score = max((s.title_score for s in scores), default=0.0)
+    author_score = max((s.author_score for s in scores), default=0.0)
 
     # Drop sources whose title does not resemble the filename, so a hallucinated
     # match cannot contribute fields. Falls back to the unfiltered set rather
@@ -178,7 +221,7 @@ def propose(book: Book) -> Proposal | None:
     # A failed read is not an empty book. Treating it as one makes every field
     # look missing, and --apply would then overwrite a title, publisher and tags
     # that were there all along. Propose nothing instead.
-    current = calibre.read_metadata(book.any_path)
+    current = calibre.read_book_metadata(book.any_path)
     unreadable = current is None
     merged = merge(surviving)
 

@@ -10,7 +10,9 @@ against 0.0013 s for reading the OPF out of the zip directly. See ``epub_reader`
 
 from __future__ import annotations
 
+import functools
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -19,7 +21,7 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 from . import opf
-from .config import EBOOK_META, FETCH_METADATA, calibre_env
+from .config import CAL_ROOT, EBOOK_META, FETCH_METADATA, calibre_env
 
 #: ebook-meta splits --tags on commas, so a tag containing one is silently torn
 #: into several. Library of Congress headings look like "Angelou, Maya, 1928-2014",
@@ -52,6 +54,35 @@ def opf_name(archive: zipfile.ZipFile) -> str | None:
     except (KeyError, ET.ParseError):
         pass
     return next((n for n in archive.namelist() if n.lower().endswith('.opf')), None)
+
+
+@functools.lru_cache(maxsize=1)
+def installed_metadata_plugins() -> frozenset[str]:
+    """Names of the metadata source plugins Calibre can actually use.
+
+    Worth checking, because ``fetch-ebook-metadata -p`` accepts a plugin name it
+    does not have, runs with no plugins at all, burns its full timeout and exits
+    successfully with no results. That is indistinguishable from "the book is not
+    in this catalogue" unless you ask.
+    """
+    customize = os.path.join(CAL_ROOT, 'bin', 'calibre-customize')
+    try:
+        result = subprocess.run(
+            [customize, '--list-plugins'],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=calibre_env(),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return frozenset()
+    names = set()
+    for line in result.stdout.splitlines():
+        if line.startswith('Metadata source'):
+            # "Metadata source   <name>   (1, 2, 3)   False"
+            rest = line[len('Metadata source') :].strip()
+            names.add(re.split(r'\s{2,}', rest)[0].strip())
+    return frozenset(names)
 
 
 def read_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[str, Any] | None:
@@ -151,3 +182,19 @@ def fetch_metadata(
             return result.stdout
         time.sleep(RETRY_PAUSE)
     return None
+
+
+def read_book_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[str, Any] | None:
+    """Read a book's embedded metadata by the best available route.
+
+    EPUBs are read straight from the zip: measured at 299x faster than spawning
+    Calibre, and more faithful. Calibre's ``--to-opf`` normalises on the way out,
+    which loses ISBNs recorded as a bare ``opf:scheme="ISBN"`` value, drops the
+    series index, and splits tags on commas before you ever see them.
+
+    Anything else still goes through Calibre, which is the only thing that reads
+    a PDF.
+    """
+    if path.lower().endswith('.epub'):
+        return read_epub_metadata(path, bare_isbn_fallback=bare_isbn_fallback)
+    return read_metadata(path, bare_isbn_fallback=bare_isbn_fallback)

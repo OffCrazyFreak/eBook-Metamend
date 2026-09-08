@@ -17,7 +17,9 @@ Never, without being asked explicitly and in that same message:
 - Add code that blanks an existing metadata value. Fields are added or improved, never emptied.
 - Run anything with `--apply` against a real library. Use a copy.
 
-If a change touches anything in `matching.py`, say so plainly in your summary and name the books you checked it against. That module is the safety model.
+If a change touches anything in `matching.py` or `tags.py`, say so plainly in your summary and name the books you checked it against. Those modules are the safety model.
+
+HIGH requires two independent sources that each identify the book on their own and agree with each other. Do not relax that to one source, and do not let a title from one source pair with an author from another.
 
 ## Boundaries
 
@@ -99,11 +101,10 @@ Hand it over the way a senior would: someone should be able to read one function
 
 Do not treat these as bugs to fix mid-task. They are the backlog.
 
-- Metadata is read by spawning a Calibre subprocess per book, roughly 350x slower than reading the OPF out of the EPUB zip. `calibre.read_epub_metadata` exists for this but is not wired in yet.
-- Fixed sleeps between source queries rather than adaptive backoff.
-- `ebook-meta` splits `--tags` on commas, so a tag containing one is torn in two on write. `calibre.TAG_SEPARATOR` is the single place to fix it.
-- No `--` end-of-options separator is passed, so a title or filename starting with `-` is read by `ebook-meta` as an option.
+- PDFs still need a Calibre subprocess to read. EPUBs go through `calibre.read_book_metadata`, which reads the zip directly.
+- Calibre splits subjects on commas at every entry point (`--tags`, `--from-opf`, all of them), so a tag containing a comma cannot be stored. `tags.reformat_name_heading` works around it for name headings only.
 - The hallucination filter runs after the scores are computed, so a reported `fn`/`au` can describe a different source set than the one that was merged.
+- Open Library times out under rapid queries and its failures are swallowed, so "no answer" can mean "the request failed".
 
 ## Commit message
 

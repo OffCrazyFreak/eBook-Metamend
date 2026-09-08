@@ -17,9 +17,28 @@ GOOGLE_PLUGIN = 'Google'
 DEFAULT_TIMEOUT = 18
 
 
+class SourceUnavailable(RuntimeError):
+    """A configured plugin is not installed, so this source cannot answer.
+
+    Raised rather than returning None. Silence here looks exactly like "no such
+    book", which is how a missing plugin went unnoticed while every decision was
+    quietly made on a single source.
+    """
+
+
+def require_plugin(plugin: str) -> None:
+    available = calibre.installed_metadata_plugins()
+    if available and plugin not in available:
+        raise SourceUnavailable(
+            f'the {plugin!r} metadata plugin is not installed. '
+            f'Install it with: calibre-customize -a <plugin>.zip'
+        )
+
+
 def fetch_plugin(
     title: str, author: str, plugin: str, timeout: int = DEFAULT_TIMEOUT
 ) -> dict[str, Any] | None:
+    require_plugin(plugin)
     xml = calibre.fetch_metadata(title, author, plugin, timeout)
     return opf.parse(xml) if xml else None
 

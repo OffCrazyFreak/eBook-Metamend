@@ -18,7 +18,7 @@ single source can write on its own authority.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from . import cache
@@ -30,8 +30,32 @@ from .openlibrary import fetch_openlibrary
 class Source:
     name: str
     fetch: Callable[[str, str], dict[str, Any] | None]
-    #: Seconds to wait after querying, to stay welcome. Google is the strictest.
+    #: Seconds to wait after a *successful* query, to stay welcome.
     pause: float
+
+
+@dataclass
+class Pacer:
+    """How long to wait after querying one source.
+
+    The original paused a fixed 11 seconds per book across the three sources
+    whether or not anything had gone wrong, which is most of the 63 seconds a
+    book used to cost. This backs off only when a source actually stops
+    answering, and returns to the polite baseline as soon as it does.
+    """
+
+    #: Longest we will ever wait, so a persistently dead source cannot stall a run.
+    ceiling: float = 60.0
+    _misses: dict[str, int] = field(default_factory=dict)
+
+    def record(self, source: str, answered: bool) -> None:
+        self._misses[source] = 0 if answered else self._misses.get(source, 0) + 1
+
+    def delay(self, source: Source) -> float:
+        misses = self._misses.get(source.name, 0)
+        if not misses:
+            return source.pause
+        return min(source.pause * (2**misses), self.ceiling)
 
 
 #: Query order matters only for the pauses; scoring is order independent.
@@ -42,4 +66,12 @@ SOURCES: tuple[Source, ...] = (
     Source('openlib', cache.wrap('openlib', fetch_openlibrary), pause=1),
 )
 
-__all__ = ['SOURCES', 'Source', 'cache', 'fetch_google', 'fetch_kobo', 'fetch_openlibrary']
+__all__ = [
+    'SOURCES',
+    'Pacer',
+    'Source',
+    'cache',
+    'fetch_google',
+    'fetch_kobo',
+    'fetch_openlibrary',
+]

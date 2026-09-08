@@ -153,7 +153,7 @@ class TestUnreadableMetadata:
         from ebook_metamend import calibre, enrich
         from ebook_metamend.library import Book
 
-        monkeypatch.setattr(calibre, 'read_metadata', lambda *a, **k: None)
+        monkeypatch.setattr(calibre, 'read_book_metadata', lambda *a, **k: None)
         monkeypatch.setattr(
             enrich,
             'query_sources',
@@ -180,7 +180,7 @@ class TestUnreadableMetadata:
         from ebook_metamend import calibre, enrich
         from ebook_metamend.library import Book
 
-        monkeypatch.setattr(calibre, 'read_metadata', lambda *a, **k: {})
+        monkeypatch.setattr(calibre, 'read_book_metadata', lambda *a, **k: {})
         monkeypatch.setattr(
             enrich,
             'query_sources',
@@ -199,3 +199,29 @@ class TestUnreadableMetadata:
 
         assert proposal.unreadable is False
         assert 'tags' in proposal.gains and 'publisher' in proposal.gains
+
+
+class TestDerivedTitlesInMerge:
+    """Longest-wins is right for subtitles and wrong for adaptations."""
+
+    def test_a_genuine_title_beats_a_longer_adaptation(self):
+        merged = merge(
+            {
+                'kobo': answer(title='On Liberty'),
+                'google': answer(title='On Liberty (Squashed Edition)'),
+            }
+        )
+        assert merged['title'] == 'On Liberty'
+
+    def test_the_longest_genuine_title_still_wins(self):
+        merged = merge(
+            {
+                'kobo': answer(title='Bad Blood'),
+                'google': answer(title='Bad Blood: Secrets and Lies'),
+            }
+        )
+        assert merged['title'] == 'Bad Blood: Secrets and Lies'
+
+    def test_an_adaptation_is_used_only_when_it_is_all_there_is(self):
+        merged = merge({'google': answer(title='Atomic Habits (Tamil)')})
+        assert merged['title'] == 'Atomic Habits (Tamil)'
