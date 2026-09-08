@@ -8,9 +8,13 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from .errors import SourceError
+
 SEARCH_URL = 'https://openlibrary.org/search.json'
 USER_AGENT = 'ebook-metamend/1.0 (personal library)'
-FIELDS = 'title,author_name,subject,publisher,isbn,first_publish_year'
+#: Only what is actually read below. first_publish_year was requested and
+#: never used.
+FIELDS = 'title,author_name,subject,publisher,isbn'
 
 TIMEOUT = 25
 ATTEMPTS = 3
@@ -32,17 +36,28 @@ def fetch_openlibrary(title: str, author: str) -> dict[str, Any] | None:
     request = urllib.request.Request(f'{SEARCH_URL}?{query}', headers={'User-Agent': USER_AGENT})
 
     payload = None
+    last_error: Exception | None = None
     for attempt in range(ATTEMPTS):
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
                 payload = json.load(response)
                 break
-        except Exception:
+        except Exception as exc:
+            last_error = exc
             # No point pausing after the last attempt; it only delays the caller.
             if attempt < ATTEMPTS - 1:
                 time.sleep(RETRY_PAUSE * (attempt + 1))
 
-    if not payload or not payload.get('docs'):
+    if payload is None:
+        # Raised, not returned as None. Open Library returns 500s, resets
+        # connections and times out its TLS handshake often enough to matter,
+        # and reporting that as "no such book" is how a source silently stops
+        # contributing.
+        raise SourceError(
+            f'{ATTEMPTS} attempts failed ({type(last_error).__name__}: {str(last_error)[:80]})'
+        )
+
+    if not payload.get('docs'):
         return None
 
     doc = payload['docs'][0]

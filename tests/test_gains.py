@@ -42,7 +42,24 @@ class TestMerge:
         merged = merge(
             {'a': answer(tags=['Self-Help']), 'b': answer(tags=['Psychology', 'Self-Help'])}
         )
-        assert merged['tags'] == ['Psychology', 'Self-Help']
+        assert set(merged['tags']) == {'Psychology', 'Self-Help'}
+
+    def test_tags_two_sources_agreed_on_come_first(self):
+        merged = merge({'a': answer(tags=['Only Mine', 'Shared']), 'b': answer(tags=['Shared'])})
+        assert merged['tags'][0] == 'Shared'
+
+    def test_truncation_keeps_agreed_tags_over_alphabetical_ones(self):
+        """Sorting then truncating took an alphabetical head, so call numbers
+        like '323.44' and 'Jc585 .m6 1999' were written as subjects while the
+        real headings were cut."""
+        noise = [f'{n}00.1' for n in range(1, 20)]
+        merged = merge(
+            {
+                'a': answer(tags=[*noise, 'Political Science']),
+                'b': answer(tags=['Political Science']),
+            }
+        )
+        assert merged['tags'][0] == 'Political Science'
 
     def test_tags_are_capped(self):
         many = [f'tag{i:02d}' for i in range(40)]
@@ -153,7 +170,7 @@ class TestUnreadableMetadata:
         from ebook_metamend import calibre, enrich
         from ebook_metamend.library import Book
 
-        monkeypatch.setattr(calibre, 'read_metadata', lambda *a, **k: None)
+        monkeypatch.setattr(calibre, 'read_book_metadata', lambda *a, **k: None)
         monkeypatch.setattr(
             enrich,
             'query_sources',
@@ -180,7 +197,7 @@ class TestUnreadableMetadata:
         from ebook_metamend import calibre, enrich
         from ebook_metamend.library import Book
 
-        monkeypatch.setattr(calibre, 'read_metadata', lambda *a, **k: {})
+        monkeypatch.setattr(calibre, 'read_book_metadata', lambda *a, **k: {})
         monkeypatch.setattr(
             enrich,
             'query_sources',
@@ -199,3 +216,86 @@ class TestUnreadableMetadata:
 
         assert proposal.unreadable is False
         assert 'tags' in proposal.gains and 'publisher' in proposal.gains
+
+
+class TestDerivedTitlesInMerge:
+    """Longest-wins is right for subtitles and wrong for adaptations."""
+
+    def test_a_genuine_title_beats_a_longer_adaptation(self):
+        merged = merge(
+            {
+                'kobo': answer(title='On Liberty'),
+                'google': answer(title='On Liberty (Squashed Edition)'),
+            }
+        )
+        assert merged['title'] == 'On Liberty'
+
+    def test_the_longest_genuine_title_still_wins(self):
+        merged = merge(
+            {
+                'kobo': answer(title='Bad Blood'),
+                'google': answer(title='Bad Blood: Secrets and Lies'),
+            }
+        )
+        assert merged['title'] == 'Bad Blood: Secrets and Lies'
+
+    def test_an_adaptation_is_used_only_when_it_is_all_there_is(self):
+        merged = merge({'google': answer(title='Atomic Habits (Tamil)')})
+        assert merged['title'] == 'Atomic Habits (Tamil)'
+
+
+class TestFieldsComeFromTheSourcesThatEarnedConfidence:
+    """Confidence and content used to be decided separately: two strong sources
+    earned HIGH, then the longest title among everything above the floor was
+    written, which could be a third answer for a different book.
+    """
+
+    def _scores(self, *rows):
+        from ebook_metamend.matching import SourceScore
+
+        return [
+            SourceScore(name=n, title=t, title_score=ts, author_score=aus) for n, t, ts, aus in rows
+        ]
+
+    def test_a_third_weaker_answer_cannot_supply_the_title(self):
+        """Verified case: two sources return the real Sapiens, a third returns
+        the graphic adaptation, which is longer and so used to win."""
+        from ebook_metamend.enrich import trusted_names
+
+        scores = self._scores(
+            ('kobo', 'Sapiens: A Brief History of Humankind', 0.95, 1.0),
+            ('google', 'Sapiens: A Brief History of Humankind', 0.95, 1.0),
+            ('openlib', 'Sapiens: A Graphic History, Volume 1', 0.95, 0.2),
+        )
+        assert trusted_names(scores) == ['kobo', 'google']
+
+    def test_an_omnibus_cannot_supply_fields_to_the_volume(self):
+        from ebook_metamend.enrich import trusted_names
+
+        scores = self._scores(
+            ('kobo', 'The Happiest Toddler on the Block', 1.0, 1.0),
+            ('google', 'The Happiest Toddler on the Block', 1.0, 1.0),
+            ('openlib', 'The Happiest Baby and The Happiest Toddler', 0.69, 1.0),
+        )
+        assert 'openlib' not in trusted_names(scores)
+
+    def test_a_recognised_adaptation_donates_nothing_at_all(self):
+        """Not just the title. It used to supply the translation's ISBN,
+        publisher and description into the English edition."""
+        from ebook_metamend.enrich import trusted_names
+        from ebook_metamend.matching import ADAPTATION_SCORE
+
+        scores = self._scores(('google', 'Atomic Habits (Tamil)', ADAPTATION_SCORE, 1.0))
+        assert trusted_names(scores) == ['google'], 'sole source is still reported'
+
+        with_real = self._scores(
+            ('kobo', 'Atomic Habits', 1.0, 1.0),
+            ('google', 'Atomic Habits (Tamil)', ADAPTATION_SCORE, 1.0),
+        )
+        assert trusted_names(with_real) == ['kobo']
+
+    def test_weaker_sources_are_used_when_none_is_strong(self):
+        from ebook_metamend.enrich import trusted_names
+
+        scores = self._scores(('kobo', 'Something Close', 0.8, 0.3))
+        assert trusted_names(scores) == ['kobo']

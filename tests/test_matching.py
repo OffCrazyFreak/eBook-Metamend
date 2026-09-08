@@ -8,18 +8,23 @@ network, no Calibre and no ebook files.
 import pytest
 
 from ebook_metamend.matching import (
+    ADAPTATION_SCORE,
     AUTHOR_STRONG,
     CONTAINED_SCORE,
     PREFIX_SCORE,
     TITLE_STRONG,
     TITLE_WEAK,
+    SourceScore,
     best_author_score,
-    best_title_score,
     classify,
-    count_agreements,
+    looks_derived,
     norm,
     sim,
 )
+
+
+def source(name, title, title_score, author_score):
+    return SourceScore(name=name, title=title, title_score=title_score, author_score=author_score)
 
 
 class TestNorm:
@@ -93,55 +98,122 @@ class TestSim:
 
 
 class TestBestScores:
-    def test_best_title_takes_the_strongest_source(self):
-        assert best_title_score(['Wrong Book', 'Atomic Habits'], 'Atomic Habits') == 1.0
+    def test_the_best_of_one_source_s_authors_wins(self):
+        assert best_author_score(['Nobody', 'James Clear'], 'James Clear') == 1.0
 
-    def test_no_sources_scores_zero(self):
-        assert best_title_score([], 'Atomic Habits') == 0.0
+    def test_no_authors_scores_zero(self):
         assert best_author_score([], 'James Clear') == 0.0
 
-    def test_best_author_searches_within_each_source(self):
-        assert best_author_score([['Nobody', 'James Clear']], 'James Clear') == 1.0
+    def test_a_bare_surname_is_not_a_full_author_match(self):
+        """sim() scores authors too, so containment must stay strictly below the
+        author threshold or "Smith" would vouch for "Zadie Smith"."""
+        from ebook_metamend.matching import AUTHOR_STRONG
 
-    def test_empty_author_list_is_not_a_match(self):
-        assert best_author_score([[]], 'James Clear') == 0.0
+        assert best_author_score(['Smith'], 'Zadie Smith') < AUTHOR_STRONG
 
 
-class TestAgreements:
-    def test_counts_pairs_not_sources(self):
-        assert count_agreements(['Atomic Habits', 'Atomic Habits', 'Atomic Habits']) == 3
+class TestDerivedWorks:
+    """Adaptations are real books that share a title. Writing their title over
+    the original is a failure this library has already suffered."""
 
-    def test_disagreeing_sources_do_not_count(self):
-        assert count_agreements(['Atomic Habits', 'War and Peace']) == 0
+    @pytest.mark.parametrize(
+        'title',
+        [
+            'On Liberty (Squashed Edition)',
+            'Atomic Habits (Tamil)',
+            'The Alchemist Graphic Novel',
+            "Man's Search for Meaning adapted for Young Adults",
+            'Summary of Atomic Habits',
+            'Atomic Habits Workbook',
+            'The Expanse Boxed Set',
+            'Abridged Edition',
+        ],
+    )
+    def test_derived_titles_are_recognised(self, title):
+        assert looks_derived(title) is True
 
-    def test_single_source_cannot_agree_with_itself(self):
-        assert count_agreements(['Atomic Habits']) == 0
+    @pytest.mark.parametrize(
+        'title',
+        ['On Liberty', 'Atomic Habits', 'The Alchemist', 'Bad Blood', 'A Study in Scarlet'],
+    )
+    def test_real_titles_are_not(self, title):
+        assert looks_derived(title) is False
+
+    @pytest.mark.parametrize(
+        ('filename', 'returned'),
+        [
+            ('On Liberty', 'On Liberty (Squashed Edition)'),
+            ('Atomic Habits', 'Atomic Habits (Tamil)'),
+            ("Man's Search for Meaning", "Man's Search for Meaning adapted for Young Adults"),
+        ],
+    )
+    def test_an_adaptation_cannot_score_high_enough_to_be_written(self, filename, returned):
+        """Every one of these was returned by a live source for this exact
+        filename, and each would have overwritten the correct title."""
+        assert sim(filename, returned) == ADAPTATION_SCORE
+        assert sim(filename, returned) < TITLE_STRONG
+
+    def test_two_adaptations_of_the_same_kind_still_compare_normally(self):
+        assert sim('Atomic Habits (Tamil)', 'Atomic Habits (Tamil)') == 1.0
 
 
 class TestClassify:
-    def test_title_and_author_both_strong_is_high(self):
-        assert classify(1.0, 1.0, 0) == 'HIGH'
+    def test_two_agreeing_strong_sources_are_high(self):
+        scores = [
+            source('kobo', 'Atomic Habits', 1.0, 1.0),
+            source('google', 'Atomic Habits', 1.0, 1.0),
+        ]
+        assert classify(scores) == 'HIGH'
 
-    def test_high_needs_both_signals(self):
-        assert classify(1.0, 0.0, 0) == 'MED', 'a perfect title with a wrong author is not enough'
-        assert classify(0.0, 1.0, 0) == 'LOW'
+    def test_one_strong_source_is_only_med(self):
+        """The rule that matters. A lone source returned an abridgement, a
+        translation and a different book on a real run; each would have been
+        written under the old rule."""
+        assert classify([source('google', 'Atomic Habits', 1.0, 1.0)]) == 'MED'
 
-    def test_cross_source_agreement_alone_never_reaches_high(self):
-        """Two sources can be wrong together, so agreement with the filename is
-        the stronger signal. This is the rule the old docstring got backwards."""
-        assert classify(0.0, AUTHOR_STRONG, 5) == 'MED'
+    def test_title_and_author_from_different_sources_do_not_combine(self):
+        """Neither source identified the book, but the old best-of maxima made it
+        look like one had."""
+        scores = [
+            source('kobo', 'Atomic Habits', 1.0, 0.0),
+            source('google', 'Something Else', 0.0, 1.0),
+        ]
+        assert classify(scores) == 'LOW'
+
+    def test_two_strong_sources_that_disagree_are_not_high(self):
+        scores = [
+            source('kobo', 'Atomic Habits', 1.0, 1.0),
+            source('google', 'War and Peace', 0.9, 0.9),
+        ]
+        assert classify(scores) == 'MED'
 
     def test_weak_title_with_strong_author_is_med(self):
-        assert classify(TITLE_WEAK, AUTHOR_STRONG, 0) == 'MED'
+        assert classify([source('a', 'x', TITLE_WEAK, AUTHOR_STRONG)]) == 'MED'
 
     def test_nothing_matching_is_low(self):
-        assert classify(0.1, 0.1, 0) == 'LOW'
+        assert classify([source('a', 'x', 0.1, 0.1)]) == 'LOW'
 
-    def test_thresholds_are_inclusive(self):
-        assert classify(TITLE_STRONG, AUTHOR_STRONG, 0) == 'HIGH'
-        assert classify(TITLE_STRONG - 0.01, AUTHOR_STRONG, 0) == 'MED'
+    def test_no_sources_at_all_is_low(self):
+        assert classify([]) == 'LOW'
 
-    def test_the_omnibus_score_cannot_be_written(self):
-        """End to end: the containment cap keeps an omnibus out of HIGH even when
-        the author matches perfectly, which is the realistic failure."""
-        assert classify(CONTAINED_SCORE, 1.0, 0) != 'HIGH'
+    def test_an_omnibus_cannot_reach_high_even_with_two_sources(self):
+        scores = [
+            source('kobo', 'Baby and Toddler Omnibus', CONTAINED_SCORE, 1.0),
+            source('google', 'Baby and Toddler Omnibus', CONTAINED_SCORE, 1.0),
+        ]
+        assert classify(scores) != 'HIGH'
+
+    def test_an_adaptation_cannot_reach_high_even_with_two_sources(self):
+        scores = [
+            source('kobo', 'On Liberty (Squashed Edition)', ADAPTATION_SCORE, 1.0),
+            source('google', 'On Liberty (Squashed Edition)', ADAPTATION_SCORE, 1.0),
+        ]
+        assert classify(scores) != 'HIGH'
+
+    def test_prefix_matches_still_reach_high(self):
+        """A subtitle is not an adaptation, and must not be penalised."""
+        scores = [
+            source('kobo', 'Bad Blood: Secrets and Lies', PREFIX_SCORE, 1.0),
+            source('google', 'Bad Blood: Secrets and Lies', PREFIX_SCORE, 1.0),
+        ]
+        assert classify(scores) == 'HIGH'

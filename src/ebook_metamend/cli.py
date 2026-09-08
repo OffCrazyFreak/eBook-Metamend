@@ -11,6 +11,7 @@ import sys
 from . import config, enrich, epub_to_pdf, extract
 from .enrich import Proposal
 from .library import Book
+from .sources import SOURCES
 
 
 def _write_json(path: str, payload) -> None:
@@ -87,6 +88,15 @@ def enrich_command(argv: list[str] | None = None) -> int:
         include_low=args.include_low,
         on_book=report_and_record,
     )
+
+    for name, why in enrich.unavailable_sources.items():
+        print(f'warning: source {name!r} was unavailable for this run: {why}', file=sys.stderr)
+    if enrich.unavailable_sources:
+        print(
+            f'warning: {len(enrich.unavailable_sources)} of {len(SOURCES)} sources were '
+            'unavailable, so cross-checking was weaker than intended',
+            file=sys.stderr,
+        )
 
     high = sum(1 for p in proposals if p.conf == 'HIGH')
     unreadable = sum(1 for p in proposals if p.unreadable)
