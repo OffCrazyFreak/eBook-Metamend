@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  lint:
+  check:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -25,14 +25,17 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       # The tool itself has no dependencies; ruff is a dev tool only.
-      - name: Install ruff
-        run: pipx install ruff
+      - name: Install dev tools
+        run: pipx install ruff && pip install pytest
 
       - name: Lint
         run: ruff check .
 
       - name: Format check
         run: ruff format --check .
+
+      - name: Tests
+        run: pytest tests/ -q
 
       - name: Byte-compile (catches syntax errors on every supported version)
         run: python -m compileall -q .

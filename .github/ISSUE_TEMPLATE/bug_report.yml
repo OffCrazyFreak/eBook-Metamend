@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Thanks for taking the time to report a bug. Please search
-        [existing issues](https://github.com/OffCrazyFreak/ebook-metamend/issues)
+        [existing issues](https://github.com/OffCrazyFreak/eBook-Metamend/issues)
         first to avoid duplicates.
 
         Only the description is required. Fill in whatever else you can, even a
@@ -14,7 +14,7 @@ body:
 
         **Found a security vulnerability?** Do not file it here. Report it
         privately as a
-        [security advisory](https://github.com/OffCrazyFreak/ebook-metamend/security/advisories/new).
+        [security advisory](https://github.com/OffCrazyFreak/eBook-Metamend/security/advisories/new).
 
         **Before attaching a proposals JSON or run output**, check it over. It
         lists your book filenames, which you may not want to publish.

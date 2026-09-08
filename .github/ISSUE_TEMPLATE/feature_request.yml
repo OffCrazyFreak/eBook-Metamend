@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please search [existing issues](https://github.com/OffCrazyFreak/ebook-metamend/issues)
+        Please search [existing issues](https://github.com/OffCrazyFreak/eBook-Metamend/issues)
         first. Only the description is required.
   - type: textarea
     id: description
