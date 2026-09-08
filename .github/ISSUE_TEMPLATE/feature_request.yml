@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest an improvement or a new metadata source
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search [existing issues](https://github.com/OffCrazyFreak/ebook-metamend/issues)
+        first. Only the description is required.
+  - type: textarea
+    id: description
+    attributes:
+      label: What would you like to see
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve
+      description: What are you trying to do that is awkward or impossible today?
+    validations:
+      required: false
+  - type: textarea
+    id: safety
+    attributes:
+      label: Effect on the safety model
+      description: |
+        If this would make the tool more willing to write metadata (a new source,
+        a looser threshold, a new auto-apply path), say how you would keep wrong
+        matches out. Suggestions that only ever write less are fine to skip this.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+    validations:
+      required: false

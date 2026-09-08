@@ -1,0 +1,78 @@
+name: Bug report
+description: Report something that is broken or not working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please search
+        [existing issues](https://github.com/OffCrazyFreak/ebook-metamend/issues)
+        first to avoid duplicates.
+
+        Only the description is required. Fill in whatever else you can, even a
+        one-line report is welcome and follow-up questions can be asked.
+
+        **Found a security vulnerability?** Do not file it here. Report it
+        privately as a
+        [security advisory](https://github.com/OffCrazyFreak/ebook-metamend/security/advisories/new).
+
+        **Before attaching a proposals JSON or run output**, check it over. It
+        lists your book filenames, which you may not want to publish.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of the bug.
+    validations:
+      required: true
+  - type: input
+    id: script
+    attributes:
+      label: Which script
+      placeholder: "e.g. 2_online_enrich.py"
+    validations:
+      required: false
+  - type: textarea
+    id: command
+    attributes:
+      label: The command you ran
+      render: shell
+      placeholder: python3 2_online_enrich.py --match "Some Book" --apply
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: false
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: Paste the relevant output or traceback.
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12.3"
+    validations:
+      required: false
+  - type: input
+    id: calibre
+    attributes:
+      label: Calibre version
+      description: Output of `ebook-meta --version`.
+      placeholder: "9.14"
+    validations:
+      required: false
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Linux Mint 22, macOS 15, Windows 11"
+    validations:
+      required: false

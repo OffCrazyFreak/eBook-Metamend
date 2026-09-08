@@ -1,0 +1,60 @@
+name: Bad metadata match
+description: A source returned the wrong book and it was written anyway
+labels: ["bad-match"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most valuable report this project can get. The whole design
+        exists to stop plausible-but-wrong matches from being written, so every
+        one that gets through is a hole in the confidence model.
+
+        You do not need to know why it happened. The filename and what was
+        written are enough to start.
+  - type: input
+    id: filename
+    attributes:
+      label: The filename
+      description: The book's filename, exactly as it is on disk.
+      placeholder: "Ray Dalio - Principles - Life and Work.epub"
+    validations:
+      required: true
+  - type: input
+    id: written
+    attributes:
+      label: The title that was written
+      placeholder: "Principles for Success"
+    validations:
+      required: true
+  - type: input
+    id: correct
+    attributes:
+      label: The correct title, if you know it
+    validations:
+      required: false
+  - type: textarea
+    id: confidence
+    attributes:
+      label: The confidence line from the output
+      description: The line starting with `[n/total]`, which shows conf, fn, au and the sources.
+      render: shell
+      placeholder: "[42/183] Ray Dalio - Principles - Life and Work   HIGH fn=0.91 au=1.00 src:kobo,google  gains:title"
+    validations:
+      required: false
+  - type: dropdown
+    id: applied
+    attributes:
+      label: Was it actually written to the file?
+      options:
+        - "Yes, I ran with --apply"
+        - "No, this was a dry run"
+        - "Yes, and I used --include-low"
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Why you think the match was accepted, if you have a theory.
+    validations:
+      required: false
