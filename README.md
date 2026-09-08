@@ -111,13 +111,13 @@ All three cases are pinned by the test suite, because they are the difference be
 
 ## What the sources are actually like
 
-Measured across a few hundred books:
+Answer rates measured on the same 10-book sample, in one run. Behaviour is from a few hundred books:
 
 | Source | Answered | Behaviour |
 | ------ | -------- | --------- |
 | Kobo | 10/10 | Best coverage and the most accurate on editions. Invents a match when it has none, so never trust it alone |
 | Google Books | 8/10 | Answers confidently with adaptations, translations and sequels. Needs a second opinion |
-| Open Library | varies | Thinner catalogue, and prone to SSL timeouts under rapid queries |
+| Open Library | 0/10 | Thinner catalogue, and unreliable in practice: HTTP 500s, connection resets and TLS handshake timeouts. Reports its failures rather than passing them off as "not found" |
 | Goodreads | - | Blocks after a single request. Not used |
 | Amazon | - | Returns SEO spam. Not used |
 

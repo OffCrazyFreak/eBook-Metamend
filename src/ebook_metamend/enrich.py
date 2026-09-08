@@ -73,8 +73,20 @@ class Proposal:
 #: Collected across a run so it can be reported once rather than per book.
 unavailable_sources: dict[str, str] = {}
 
-#: Shared across a run so back-off carries between books.
+#: Shared across a run so back-off carries between books. Reset by run().
 _pacer = Pacer()
+
+
+def reset_run_state() -> None:
+    """Forget what the last run learned.
+
+    Module state that survives between runs means a source that was unavailable
+    once is never retried, and back-off from a previous run still applies. Fine
+    for a single CLI invocation, wrong for anything longer lived.
+    """
+    global _pacer
+    unavailable_sources.clear()
+    _pacer = Pacer()
 
 
 def query_sources(title: str, author: str, *, pause: bool = True) -> dict[str, dict[str, Any]]:
@@ -272,6 +284,7 @@ def run(
     on_book: Callable[[int, int, Book, Proposal | None], None] | None = None,
 ) -> list[Proposal]:
     """Enrich the given books. Returns one proposal per book that got an answer."""
+    reset_run_state()
     proposals: list[Proposal] = []
     for index, book in enumerate(selected, 1):
         proposal = propose(book)

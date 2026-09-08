@@ -105,3 +105,37 @@ class TestPacer:
             pacer.record('google', answered=False)
         pacer.record('google', answered=True)
         assert pacer.delay(source) == 3
+
+
+class TestRunStateIsolation:
+    """Module state that survives between runs means a source that failed once is
+    never retried, and back-off from a previous run still applies."""
+
+    def test_reset_forgets_unavailable_sources(self):
+        enrich.unavailable_sources['kobo'] = 'missing'
+        enrich.reset_run_state()
+        assert enrich.unavailable_sources == {}
+
+    def test_reset_clears_accumulated_back_off(self):
+        source = Source('google', lambda *_: None, pause=4)
+        for _ in range(5):
+            enrich._pacer.record('google', answered=False)
+        assert enrich._pacer.delay(source) > 4
+        enrich.reset_run_state()
+        assert enrich._pacer.delay(source) == 4
+
+    def test_run_resets_before_starting(self, monkeypatch):
+        enrich.unavailable_sources['kobo'] = 'missing from a previous run'
+        monkeypatch.setattr(enrich, 'SOURCES', ())
+        enrich.run([])
+        assert enrich.unavailable_sources == {}
+
+
+class TestPacerClamping:
+    def test_the_exponent_cannot_grow_without_bound(self):
+        """min() clamps the result, but 2**misses is computed first, so a source
+        that never answers would build an astronomically large integer."""
+        pacer = Pacer(max_misses=8)
+        for _ in range(10_000):
+            pacer.record('dead', answered=False)
+        assert pacer._misses['dead'] == 8

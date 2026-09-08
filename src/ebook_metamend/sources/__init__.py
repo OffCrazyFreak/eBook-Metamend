@@ -46,10 +46,17 @@ class Pacer:
 
     #: Longest we will ever wait, so a persistently dead source cannot stall a run.
     ceiling: float = 60.0
+    #: Misses are capped before they become an exponent. Without this a source
+    #: that never answers builds an astronomically large power of two, which is
+    #: slow to compute long before the ceiling clamps the result.
+    max_misses: int = 8
     _misses: dict[str, int] = field(default_factory=dict)
 
     def record(self, source: str, answered: bool) -> None:
-        self._misses[source] = 0 if answered else self._misses.get(source, 0) + 1
+        if answered:
+            self._misses[source] = 0
+        else:
+            self._misses[source] = min(self._misses.get(source, 0) + 1, self.max_misses)
 
     def delay(self, source: Source) -> float:
         misses = self._misses.get(source.name, 0)

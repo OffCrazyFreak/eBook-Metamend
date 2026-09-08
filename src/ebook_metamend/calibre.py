@@ -33,8 +33,25 @@ TAG_SEPARATOR = ','
 RETRY_PAUSE = 5
 
 
+#: An EPUB is an untrusted archive. A metadata file has no legitimate reason to
+#: be large, so refuse to expand one that is, rather than decompressing whatever
+#: a crafted file claims (CWE-409).
+MAX_METADATA_BYTES = 8 * 1024 * 1024
+
 CONTAINER = 'META-INF/container.xml'
 _CONTAINER_NS = '{urn:oasis:names:tc:opendocument:xmlns:container}'
+
+
+def _read_limited(archive: zipfile.ZipFile, name: str) -> bytes:
+    """Read a member, refusing one that expands beyond MAX_METADATA_BYTES."""
+    info = archive.getinfo(name)
+    if info.file_size > MAX_METADATA_BYTES:
+        raise ValueError(f'{name} expands to {info.file_size} bytes, refusing to read')
+    with archive.open(name) as handle:
+        data = handle.read(MAX_METADATA_BYTES + 1)
+    if len(data) > MAX_METADATA_BYTES:
+        raise ValueError(f'{name} exceeds {MAX_METADATA_BYTES} bytes, refusing to read')
+    return data
 
 
 def opf_name(archive: zipfile.ZipFile) -> str | None:
@@ -46,12 +63,12 @@ def opf_name(archive: zipfile.ZipFile) -> str | None:
     container is missing or unreadable.
     """
     try:
-        container = ET.fromstring(archive.read(CONTAINER).decode('utf8', 'ignore'))
+        container = ET.fromstring(_read_limited(archive, CONTAINER).decode('utf8', 'ignore'))
         rootfile = container.find(f'.//{_CONTAINER_NS}rootfile')
         declared = rootfile is not None and rootfile.get('full-path')
         if declared and declared in archive.namelist():
             return declared
-    except (KeyError, ET.ParseError):
+    except (KeyError, ValueError, ET.ParseError):
         pass
     return next((n for n in archive.namelist() if n.lower().endswith('.opf')), None)
 
@@ -125,8 +142,8 @@ def read_epub_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[s
             name = opf_name(z)
             if name is None:
                 return None
-            root = ET.fromstring(z.read(name).decode('utf8', 'ignore'))
-    except (OSError, KeyError, StopIteration, zipfile.BadZipFile, ET.ParseError):
+            root = ET.fromstring(_read_limited(z, name).decode('utf8', 'ignore'))
+    except (OSError, KeyError, ValueError, StopIteration, zipfile.BadZipFile, ET.ParseError):
         return None
     return opf.parse_root(root, bare_isbn_fallback=bare_isbn_fallback)
 
