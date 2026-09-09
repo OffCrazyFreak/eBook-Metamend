@@ -41,7 +41,10 @@ ADAPTATION_SCORE = 0.55
 _ADAPTATION_MARKERS = re.compile(
     r'\b('
     r'abridge\w*|squashed|condensed\s+(?:edition|version)|'
-    r'graphic\s+(?:novel|history|adaptation)|illustrated(?:\s+adaptation)?|'
+    # Bare 'illustrated' only where an edition label sits, at the end or inside
+    # brackets. Unanchored it classified Bradbury's 'The Illustrated Man' as a
+    # derived work, which would have made that book unenrichable.
+    r'graphic\s+(?:novel|history|adaptation)|illustrated(?:\s+adaptation)?(?=\s*(?:[)\]]|$))|'
     r'adapted\s+for|young\s+(?:readers?|adults?)\s+edition|'
     r'summary\s+(?:of|and\s+analysis)|workbook|study\s+guide|'
     r'box(?:ed)?\s+set'
@@ -88,7 +91,11 @@ def derived_marker(title: str | None) -> str:
     """
     text = title or ''
     found = [
-        match.group(0).strip(' ,:-')
+        # Brackets stripped as well as separators: the same marker written
+        # "(Tamil Edition)" by one source and "[Tamil Edition]" by another has
+        # to compare equal, or two sources naming the same translation are
+        # capped against each other and can never agree.
+        match.group(0).strip(' ,:-()[]')
         for match in (
             _ADAPTATION_MARKERS.search(text),
             _TRANSLATION_MARKER.search(text),

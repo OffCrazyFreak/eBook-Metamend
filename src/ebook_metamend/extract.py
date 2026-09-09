@@ -52,8 +52,14 @@ def epub_meta_and_text(path: str) -> tuple[dict[str, Any], str]:
         documents = sorted(n for n in names if n.lower().endswith(('.xhtml', '.html', '.htm')))
         for name in documents[:MAX_DOCUMENTS]:
             # Bounded like the OPF above: an EPUB is an untrusted archive and a
-            # deflate-bombed chapter would otherwise be expanded in full.
-            raw = _SCRIPT_OR_STYLE.sub(' ', calibre.read_limited(z, name).decode('utf8', 'ignore'))
+            # deflate-bombed chapter would otherwise be expanded in full. Caught
+            # per document, because the loop sits inside the outer try and one
+            # refused chapter would otherwise discard the metadata already parsed.
+            try:
+                data = calibre.read_limited(z, name)
+            except ValueError:
+                continue
+            raw = _SCRIPT_OR_STYLE.sub(' ', data.decode('utf8', 'ignore'))
             chunk = re.sub(r'\s+', ' ', html.unescape(_TAG.sub(' ', raw))).strip()
             if len(chunk) > 40:
                 text += ' ' + chunk

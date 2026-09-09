@@ -240,6 +240,23 @@ class TestFixturesRecordWhatHappenedIncludingFailure:
         with pytest.raises(enrich.SourceError, match='TLS timeout'):
             replayed('Dune', 'Herbert')
 
+    def test_record_mode_retries_a_stored_failure(self, fixtures, monkeypatch):
+        """A failure is transient by definition, so freezing the first bad minute
+        into the fixtures would make it permanent."""
+        monkeypatch.setattr(cache, 'MODE', 'record')
+        failing = cache.wrap(
+            'openlib', lambda t, a: (_ for _ in ()).throw(enrich.SourceError('TLS timeout'))
+        )
+        with pytest.raises(enrich.SourceError):
+            failing('Dune', 'Herbert')
+
+        recovered = cache.wrap('openlib', lambda t, a: {'title': 'Dune'})
+        assert recovered('Dune', 'Herbert') == {'title': 'Dune'}
+
+        monkeypatch.setattr(cache, 'MODE', 'replay')
+        replayed = cache.wrap('openlib', lambda t, a: pytest.fail('replay hit the network'))
+        assert replayed('Dune', 'Herbert') == {'title': 'Dune'}
+
     def test_an_unrecorded_key_is_loud_rather_than_silent(self, fixtures, monkeypatch):
         monkeypatch.setattr(cache, 'MODE', 'replay')
         replayed = cache.wrap('kobo', lambda t, a: {'title': t})

@@ -65,10 +65,15 @@ def wrap(source: str, fetch: Callable[[str, str], Any]) -> Callable[[str, str], 
             # Recording only successes meant a run where a source was unreachable
             # could not be replayed at all: the key was never written, so replay
             # raised MissingFixture and went back to the network.
-            if 'error' in record:
+            #
+            # Only in replay, though. A failure is by definition transient, so in
+            # record mode a stored one must be retried and overwritten, or the
+            # first bad minute would be frozen into the fixtures for good.
+            if 'error' not in record:
+                return record['response']
+            if MODE == 'replay':
                 raise SourceError(record['error'])
-            return record['response']
-        if MODE == 'replay':
+        elif MODE == 'replay':
             raise MissingFixture(f'{source} / {title!r} / {author!r} -> {path.name}')
 
         try:

@@ -249,10 +249,21 @@ class TestEditionMarkersInEveryFormPublishersUse:
             'Atomic Habits',
             'Bad Blood: Secrets and Lies in a Silicon Valley Startup',
             'The Editions of Shakespeare',
+            # A real Bradbury novel. An unanchored 'illustrated' marked it as a
+            # derived work, which would have made the book unenrichable.
+            'The Illustrated Man',
+            'The Illustrated History of Rome',
         ],
     )
     def test_an_ordinary_title_is_not(self, title):
         assert not looks_derived(title)
+
+    def test_the_same_marker_in_different_brackets_compares_equal(self):
+        """The brackets are part of the regex match. Keeping them meant one
+        source's "(Tamil Edition)" and another's "[Tamil Edition]" read as two
+        different markers, so two sources naming the same translation were
+        capped against each other and could never agree."""
+        assert sim('Atomic Habits (Tamil Edition)', 'Atomic Habits [Tamil Edition]') == 1.0
 
     def test_the_colon_form_is_capped_below_the_reporting_floor(self):
         assert sim('Atomic Habits', 'Atomic Habits: Tamil Edition') <= ADAPTATION_SCORE

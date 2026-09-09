@@ -30,6 +30,11 @@ DC = '{http://purl.org/dc/elements/1.1/}'
 #: job is to be trusted about real ones.
 SNAPSHOT_FORMAT = 2
 
+#: An EPUB in the library is still an untrusted archive, and this tool walks
+#: every one of them. A metadata or text member has no legitimate reason to be
+#: large, so refuse to expand one that claims to be.
+MAX_MEMBER_BYTES = 8 * 1024 * 1024
+
 CONTAINER = 'META-INF/container.xml'
 CONTAINER_NS = '{urn:oasis:names:tc:opendocument:xmlns:container}'
 
@@ -37,6 +42,16 @@ CONTAINER_NS = '{urn:oasis:names:tc:opendocument:xmlns:container}'
 # the first set is the tool doing its job; a change to the second set is damage.
 META_FIELDS = ('title', 'authors', 'tags', 'publisher', 'isbn', 'series', 'description_len')
 CONTENT_FIELDS = ('text_sha256', 'page_count', 'zip_ok')
+
+
+def _read_limited(z: zipfile.ZipFile, name: str) -> bytes:
+    """Read a member, refusing one that expands beyond MAX_MEMBER_BYTES."""
+    if z.getinfo(name).file_size > MAX_MEMBER_BYTES:
+        raise ValueError(f'{name} expands beyond {MAX_MEMBER_BYTES} bytes')
+    data = z.open(name).read(MAX_MEMBER_BYTES + 1)
+    if len(data) > MAX_MEMBER_BYTES:
+        raise ValueError(f'{name} exceeds {MAX_MEMBER_BYTES} bytes')
+    return data
 
 
 def _opf_name(z: zipfile.ZipFile) -> str:
@@ -51,12 +66,12 @@ def _opf_name(z: zipfile.ZipFile) -> str:
     never sees and report "unchanged" after a write that did change the book.
     """
     try:
-        container = ET.fromstring(z.read(CONTAINER).decode('utf8', 'ignore'))
+        container = ET.fromstring(_read_limited(z, CONTAINER).decode('utf8', 'ignore'))
         rootfile = container.find(f'.//{CONTAINER_NS}rootfile')
         declared = rootfile is not None and rootfile.get('full-path')
         if declared and declared in z.namelist():
             return declared
-    except (KeyError, ET.ParseError):
+    except (KeyError, ValueError, ET.ParseError):
         pass
     return next(n for n in z.namelist() if n.lower().endswith('.opf'))
 
@@ -75,7 +90,7 @@ def _epub(path: str) -> dict:
         return out
 
     try:
-        root = ET.fromstring(z.read(_opf_name(z)).decode('utf8', 'ignore'))
+        root = ET.fromstring(_read_limited(z, _opf_name(z)).decode('utf8', 'ignore'))
 
         def g(tag):
             return [(e.text or '').strip() for e in root.iter(DC + tag) if (e.text or '').strip()]
@@ -104,7 +119,13 @@ def _epub(path: str) -> dict:
         h = hashlib.sha256()
         for n in sorted(z.namelist()):
             if n.lower().endswith(('.xhtml', '.html', '.htm')):
-                text = re.sub(r'<[^>]+>', ' ', z.read(n).decode('utf8', 'ignore'))
+                # A refused member still contributes its name to the digest, so
+                # a bomb cannot make a changed book read as unchanged.
+                try:
+                    body = _read_limited(z, n)
+                except ValueError:
+                    body = b'<refused>'
+                text = re.sub(r'<[^>]+>', ' ', body.decode('utf8', 'ignore'))
                 # Hash the member name too, or swapping two chapters' contents
                 # produces an identical digest and reads as "unchanged".
                 h.update(n.encode('utf8'))
