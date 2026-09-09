@@ -91,7 +91,7 @@ tools/             snapshot, strip and replay harnesses for measuring a change
 
 ## How the matching works
 
-Books are expected to be named `Author - Title - Subtitle.epub`, optionally with a `.pdf` twin of the same name, inside category folders:
+Books are expected to be named `Author - Title - Subtitle.epub`, optionally with a `.pdf` twin of the same name, inside category folders. A book in a series can be named `Author - Series - 02 - Title.epub`, and the series is then kept apart from the title rather than glued onto it, because no catalogue has ever returned "The Ravenhood Flock":
 
 ```
 ~/eBooks/
@@ -99,6 +99,7 @@ Books are expected to be named `Author - Title - Subtitle.epub`, optionally with
 │   ├── Donald A. Norman - The Design Of Everyday Things.epub
 │   └── Donald A. Norman - The Design Of Everyday Things.pdf
 └── Fiction & Novels/
+    ├── Kate Stewart - The Ravenhood - 01 - Flock.epub
     └── Paulo Coelho - The Alchemist.epub
 ```
 

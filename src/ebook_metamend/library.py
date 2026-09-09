@@ -15,8 +15,9 @@ from .config import LIBRARY
 
 BOOK_EXTENSIONS = ('.epub', '.pdf')
 
-#: A series number embedded in a filename, as in "Series - 02.5 - Title".
-_SERIES_NUMBER = re.compile(r'\s*-\s*\d+(\.\d+)?\s*-\s*')
+#: "Series Name - 02.5 - Book Title". The number is the boundary: everything
+#: before it names the series, everything after it is the book's own title.
+_SERIES_PART = re.compile(r'^(?P<series>.+?)\s*-\s*(?P<index>\d+(?:\.\d+)?)\s*-\s*(?P<title>.+)$')
 #: Where a search query should stop: a subtitle separator or a parenthesis.
 _QUERY_TAIL = re.compile(r'\s+-\s+|\s*:\s*|\s*\(')
 
@@ -28,17 +29,37 @@ class FilenameFacts:
 
     stem: str
     author: str
-    #: Full title with any embedded series number removed.
+    #: The book's own title, without the series name or its number.
     title: str
     #: Shortened form used to query sources, which do badly with long subtitles.
     query: str
+    #: The series named in the filename, if it names one.
+    series: str | None = None
+    #: Its position in that series, as written.
+    series_index: str | None = None
 
 
 def parse_filename(stem: str) -> FilenameFacts:
+    """Split "Author - Series - 02 - Title" into the parts that mean something.
+
+    The series is kept apart from the title rather than folded into it. Glued
+    together they read "The Ravenhood Flock", which no catalogue has ever
+    returned, so every book named this way scored 0.69 on the title and could
+    never reach HIGH however exactly the sources agreed. Roughly one book in ten
+    here is named that way.
+    """
     author, _, rest = stem.partition(' - ')
-    title = _SERIES_NUMBER.sub(' ', rest).strip()
+    series = index = None
+    match = _SERIES_PART.match(rest)
+    if match:
+        series = match.group('series').strip()
+        index = match.group('index')
+        rest = match.group('title')
+    title = rest.strip()
     query = _QUERY_TAIL.split(title)[0].strip() or title
-    return FilenameFacts(stem=stem, author=author, title=title, query=query)
+    return FilenameFacts(
+        stem=stem, author=author, title=title, query=query, series=series, series_index=index
+    )
 
 
 @dataclass
