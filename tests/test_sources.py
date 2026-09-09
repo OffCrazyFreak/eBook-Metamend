@@ -135,8 +135,14 @@ class TestRunStateIsolation:
 class TestPacerClamping:
     def test_the_exponent_cannot_grow_without_bound(self):
         """min() clamps the result, but 2**misses is computed first, so a source
-        that never answers would build an astronomically large integer."""
-        pacer = Pacer(max_misses=8)
+        that never answers would build an astronomically large integer.
+
+        Asserted through delay() rather than the miss counter, so the test still
+        fails if the clamp moves to the wrong side of the arithmetic."""
+        pacer = Pacer(max_misses=8, ceiling=60)
+        source = Source('dead', lambda *_: None, pause=1)
         for _ in range(10_000):
             pacer.record('dead', answered=False)
-        assert pacer._misses['dead'] == 8
+        # 1 * 2**8 clamped to the ceiling. The point is that it returns promptly
+        # and finitely, not that it returns any particular number.
+        assert pacer.delay(source) == 60

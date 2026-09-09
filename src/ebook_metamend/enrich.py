@@ -276,9 +276,15 @@ def compute_gains(merged: dict[str, Any], current: dict[str, Any], conf: str) ->
     Never returns a value that would blank an existing field.
     """
     gains: dict[str, Any] = {}
+    # LOW means no source cleared both signals: not one of them identified the
+    # book. Under --include-low it may still contribute a subject list, which is
+    # additive and easy to eyeball, but not an identifier. An ISBN or publisher
+    # landing in an empty field is exactly the value you will later trust.
+    identified = conf != 'LOW'
+
     if merged['tags'] and not current.get('tags'):
         gains['tags'] = merged['tags']
-    if merged['series'] and not current.get('series'):
+    if identified and merged['series'] and not current.get('series'):
         gains['series'] = merged['series']
     if merged['description']:
         # Filling an empty description is always safe. Replacing one is not:
@@ -289,9 +295,9 @@ def compute_gains(merged: dict[str, Any], current: dict[str, Any], conf: str) ->
             gains['description'] = merged['description']
         elif conf == 'HIGH' and len(merged['description']) > len(existing):
             gains['description'] = merged['description']
-    if merged['isbn'] and not current.get('isbn'):
+    if identified and merged['isbn'] and not current.get('isbn'):
         gains['isbn'] = merged['isbn']
-    if merged['publisher'] and not current.get('publisher'):
+    if identified and merged['publisher'] and not current.get('publisher'):
         gains['publisher'] = merged['publisher']
     if (
         conf == 'HIGH'

@@ -154,8 +154,16 @@ class TestBuildWriteArgs:
             'isbn': 'I',
         }
         args = build_write_args(gains, merge({}))
-        for flag in ('-t', '--tags', '-c', '--publisher', '--isbn'):
-            assert flag in args
+        # Paired, not merely present. Checking only that each flag appears would
+        # pass with two values swapped, which is how a description reaches -t.
+        pairs = dict(zip(args[::2], args[1::2], strict=True))
+        assert pairs == {
+            '-t': 'T',
+            '--tags': 'a,b',
+            '-c': 'D',
+            '--publisher': 'P',
+            '--isbn': 'I',
+        }
 
 
 class TestUnreadableMetadata:

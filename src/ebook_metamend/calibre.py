@@ -25,7 +25,13 @@ from .config import CAL_ROOT, EBOOK_META, FETCH_METADATA, calibre_env
 
 #: ebook-meta splits --tags on commas, so a tag containing one is silently torn
 #: into several. Library of Congress headings look like "Angelou, Maya, 1928-2014",
-#: which is exactly the shape that breaks. Semicolons are not split.
+#: which is exactly the shape that breaks.
+#:
+#: Changing the separator does not help and has already been tried: Calibre
+#: splits on commas at every entry point (--tags with a comma, with a semicolon,
+#: with a backslash escape, and --from-opf), so a comma simply cannot be stored
+#: in a tag. The workaround is tags.reformat_name_heading, which rewrites the
+#: heading into a form that does not contain one.
 TAG_SEPARATOR = ','
 
 #: Pause between source retries. Kept as the original fixed value for now;

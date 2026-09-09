@@ -20,7 +20,7 @@ Three sources are queried per book. Every answer is scored against the filename 
 | ---------- | --------- | -------- |
 | **HIGH** | **two** sources each match the filename's title (>=0.85) **and** its author (>=0.7) **on their own**, and agree with each other | yes |
 | **MED** | one source manages that, or the evidence is weaker | only with `--include-low` |
-| **LOW** | anything else | only with `--include-low` |
+| **LOW** | anything else | only with `--include-low`, and subjects only |
 
 **One source is never enough.** Measured on a real library, a single source returned an abridgement (`On Liberty (Squashed Edition)`), a translation (`Atomic Habits (Tamil)`) and a different book entirely (`Revenge of the Tipping Point`) for three correctly named files. Each would have been written. A second source disagreed with all three.
 
@@ -28,7 +28,7 @@ Both signals must also come from the *same* source. Taking the best title from o
 
 The cost is deliberate: a book only one source knows, typically self-published or niche, cannot reach HIGH and needs `--include-low`.
 
-Only the sources that earned the confidence may supply the fields, and identifiers (ISBN, publisher, series) come only from a source that named the winning title, because those describe one specific edition.
+Only the sources that earned the confidence may supply the fields, and identifiers (ISBN, publisher, series) come only from a source that named the winning title, because those describe one specific edition. At LOW no source identified the book at all, so even with the override it can contribute subjects and a description, never an identifier.
 
 Dry run is the default. Nothing is ever blanked, and the only existing field that can be replaced rather than filled is the description, which needs HIGH to do it. Every run leaves a JSON record of what it decided and why.
 

@@ -258,3 +258,36 @@ class TestFixturesRecordWhatHappenedIncludingFailure:
         assert saved['source'] == 'kobo'
         assert saved['title'] == 'Dune'
         assert saved['response'] == {'title': 'Dune'}
+
+
+class TestAtLowNoSourceIdentifiedTheBook:
+    """LOW means not one source cleared both the title and the author. Under
+    --include-low it may still offer subjects, but not an identifier."""
+
+    MERGED = {
+        'title': 'Something',
+        'tags': ['Fiction'],
+        'description': 'A blurb.',
+        'series': 'Some Saga',
+        'sidx': '2',
+        'publisher': 'A Publisher',
+        'isbn': '9780000000001',
+    }
+
+    def test_identifiers_are_withheld(self):
+        gains = enrich.compute_gains(self.MERGED, {}, 'LOW')
+        assert 'isbn' not in gains
+        assert 'publisher' not in gains
+        assert 'series' not in gains
+
+    def test_subjects_and_an_empty_description_still_come_through(self):
+        gains = enrich.compute_gains(self.MERGED, {}, 'LOW')
+        assert gains['tags'] == ['Fiction']
+        assert gains['description'] == 'A blurb.'
+
+    @pytest.mark.parametrize('conf', ['MED', 'HIGH'])
+    def test_and_are_written_once_something_identified_it(self, conf):
+        gains = enrich.compute_gains(self.MERGED, {}, conf)
+        assert gains['isbn'] == '9780000000001'
+        assert gains['publisher'] == 'A Publisher'
+        assert gains['series'] == 'Some Saga'
