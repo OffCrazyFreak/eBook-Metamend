@@ -28,7 +28,7 @@ Both signals must also come from the *same* source. Taking the best title from o
 
 The cost is deliberate: a book only one source knows, typically self-published or niche, cannot reach HIGH and needs `--include-low`.
 
-Only the sources that earned the confidence may supply the fields, and identifiers (ISBN, publisher, series) come only from a source that named the winning title, because those describe one specific edition. At LOW no source identified the book at all, so even with the override it can contribute subjects and a description, never an identifier.
+Only the sources that earned the confidence may supply the fields, and identifiers (ISBN, publisher, series) come only from a source that named the winning title, because those describe one specific edition. The winning title is the answer closest to the filename, never the longest: a sequel and a companion planner are both longer than the book they sit beside. At LOW no source identified the book at all, so even with the override it can contribute subjects and a description, never an identifier.
 
 Dry run is the default. Nothing is ever blanked, and the only existing field that can be replaced rather than filled is the description, which needs HIGH to do it. Every run leaves a JSON record of what it decided and why.
 

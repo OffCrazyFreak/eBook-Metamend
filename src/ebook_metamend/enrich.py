@@ -6,6 +6,7 @@ the CLI owns presentation.
 
 from __future__ import annotations
 
+import re
 import sys
 import time
 from collections.abc import Callable, Iterable
@@ -214,31 +215,54 @@ def _ranked_tags(answers: list[dict[str, Any]]) -> list[str]:
     return sorted(votes, key=lambda t: (-votes[t], order[t]))
 
 
-def _best_title(titles: list[str]) -> str:
-    """The title the most sources named, then the longest of those.
+#: Where a subtitle begins: a colon, or a dash with space either side. The
+#: spaces matter, or "Twenty-One" splits.
+_SUBTITLE_BREAK = re.compile(r':\s*|\s+[-\u2013\u2014]\s+')
 
-    Longest-wins alone is right for subtitles and wrong for sequels. "Foundation
-    and Empire" is longer than "Foundation" and is a legitimate prefix extension
-    of it, so it wins on length and it agrees on similarity. Counting sources
-    first separates the two cases without a new threshold: a subtitle is one
-    source describing the same book more fully, a sequel is one source out of
-    three describing a different one.
+
+def _adds_only_a_subtitle(core: str, longer: str) -> bool:
+    """True when ``longer`` is ``core`` plus a subtitle, not a longer title.
+
+    This is the whole difference between an improvement and a different book,
+    and length cannot tell them apart. Measured on this library, Kobo answered
+    "Essentialism" and Google answered "The Essentialism Planner: A 90-Day Guide
+    to Accomplishing More by Doing Less", a separate companion volume. Both name
+    the real author, both are strong, and a planner is a legitimate prefix, so
+    it agreed, reached HIGH and won on length.
+
+    Splitting at the subtitle separator tells them apart: "Sapiens" is the head
+    of "Sapiens: A Brief History of Humankind", but "Essentialism" is not the
+    head of "The Essentialism Planner", because "Planner" is title, not subtitle.
+    """
+    if not matching.norm(core) or matching.norm(longer) == matching.norm(core):
+        return False
+    head = _SUBTITLE_BREAK.split(longer, 1)[0]
+    return matching.norm(head) == matching.norm(core)
+
+
+def _best_title(titles: list[str], filename_title: str) -> str:
+    """The answer matching the filename best, plus a subtitle if one is offered.
+
+    The filename is the ground truth everywhere else in this tool, so it decides
+    here too. Preferring the longest answer instead is what let a sequel and a
+    companion volume be written over the book itself.
 
     Derived works are dropped first, unless every answer is one.
     """
     genuine = [t for t in titles if not matching.looks_derived(t)] or titles
     if not genuine:
         return ''
-    votes: dict[str, int] = {}
-    for title in genuine:
-        votes[matching.norm(title)] = votes.get(matching.norm(title), 0) + 1
-    winner = max(
-        votes, key=lambda key: (votes[key], max(len(t) for t in genuine if matching.norm(t) == key))
-    )
-    return max((t for t in genuine if matching.norm(t) == winner), key=len)
+    closest = max(matching.sim(t, filename_title) for t in genuine)
+    # Shortest of the equally close. A subtitle is added back below, on evidence
+    # rather than on length.
+    core = min((t for t in genuine if matching.sim(t, filename_title) == closest), key=len)
+    extensions = [t for t in genuine if _adds_only_a_subtitle(core, t)]
+    return max(extensions, key=len) if extensions else core
 
 
-def merge(answers: dict[str, dict[str, Any]], author: str = '') -> dict[str, Any]:
+def merge(
+    answers: dict[str, dict[str, Any]], author: str = '', filename_title: str = ''
+) -> dict[str, Any]:
     """Combine surviving answers into one candidate record.
 
     ``author`` is passed through to the tag cleaner, which needs it to tell a
@@ -254,7 +278,7 @@ def merge(answers: dict[str, dict[str, Any]], author: str = '') -> dict[str, Any
       trusted answer contributes.
     """
     values = list(answers.values())
-    title = _best_title([a['title'] for a in values if a.get('title')])
+    title = _best_title([a['title'] for a in values if a.get('title')], filename_title)
     # Exact after normalising, not merely similar: 0.95 similarity is precisely
     # what a sequel scores against the book it follows.
     same_book = [a for a in values if matching.norm(a.get('title')) == matching.norm(title)]
@@ -356,7 +380,7 @@ def propose(book: Book) -> Proposal | None:
     # that were there all along. Propose nothing instead.
     current = calibre.read_book_metadata(book.any_path)
     unreadable = current is None
-    merged = merge(surviving, facts.author)
+    merged = merge(surviving, facts.author, facts.title)
 
     return Proposal(
         stem=book.stem,
