@@ -116,6 +116,30 @@ def looks_derived(title: str | None) -> bool:
     return bool(derived_marker(title))
 
 
+_EXTENSION_TITLE = re.compile(r'\.(pdf|indd|qxd|doc|docx|tex)$', re.I)
+_PLACEHOLDER_TITLE = re.compile(r'(untitled|microsoft word|book\d*)', re.I)
+#: A short all-caps code such as NBRT_A01. Case sensitive on purpose, so that a
+#: real title like "Artemis" is not mistaken for one.
+_CODE_TITLE = re.compile(r'[A-Z0-9_\-]{1,14}')
+
+
+def junky(title: str | None) -> bool:
+    """True if a title is not really a title.
+
+    Note that an empty title counts as junk. That is the case that makes the
+    copy rule work on PDFs carrying no title at all, and it is why this cannot be
+    replaced by the regexes alone.
+    """
+    title = (title or '').strip()
+    if not title:
+        return True
+    if _EXTENSION_TITLE.search(title):
+        return True
+    if _PLACEHOLDER_TITLE.fullmatch(title):
+        return True
+    return bool(_CODE_TITLE.fullmatch(title))
+
+
 def norm(s: str | None) -> str:
     """Lowercase, spell out % and &, drop punctuation and leading articles."""
     s = (s or '').lower().replace('%', ' percent ').replace('&', ' and ')

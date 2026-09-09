@@ -4,8 +4,8 @@ import textwrap
 
 import pytest
 
-from ebook_metamend.epub_to_pdf import junky
 from ebook_metamend.library import books, pairs, parse_filename, walk
+from ebook_metamend.matching import junky
 from ebook_metamend.opf import parse
 
 
@@ -17,7 +17,22 @@ class TestParseFilename:
 
     def test_strips_an_embedded_series_number(self):
         facts = parse_filename('Some Author - Example Saga - 02.5 - Second Volume')
-        assert '02.5' not in facts.title
+        assert facts.title == 'Second Volume'
+        assert facts.series == 'Example Saga'
+        assert facts.series_index == '02.5'
+
+    def test_the_series_name_is_not_glued_onto_the_title(self):
+        """Glued together it reads "The Ravenhood Flock", which no catalogue has
+        ever returned, so every book named this way scored 0.69 on its title and
+        could never reach HIGH however exactly the sources agreed."""
+        facts = parse_filename('Kate Stewart - The Ravenhood - 01 - Flock')
+        assert facts.title == 'Flock'
+        assert facts.query == 'Flock'
+
+    def test_a_subtitle_is_not_mistaken_for_a_series(self):
+        facts = parse_filename('John Carreyrou - Bad Blood - Secrets And Lies')
+        assert facts.series is None
+        assert facts.title == 'Bad Blood - Secrets And Lies'
 
     def test_query_stops_at_a_subtitle(self):
         facts = parse_filename('John Carreyrou - Bad Blood - Secrets And Lies')

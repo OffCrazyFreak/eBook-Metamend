@@ -8,7 +8,6 @@ import pytest
 
 from ebook_metamend.enrich import (
     MAX_MERGED_TAGS,
-    TITLE_IMPROVEMENT_MARGIN,
     build_write_args,
     compute_gains,
 )
@@ -131,16 +130,27 @@ class TestComputeGains:
             {'a': answer(title='Atomic Habits: An Easy and Proven Way')},
             filename_title='Atomic Habits',
         )
-        current = {'title': 'Atomic Habits'}
+        current = {'title': ''}
         assert 'title' in compute_gains(merged, current, conf='HIGH')
         for conf in ('MED', 'LOW'):
             assert 'title' not in compute_gains(merged, current, conf=conf)
 
-    def test_title_must_beat_the_existing_one_by_the_margin(self):
-        current = {'title': 'Atomic Habits'}
-        barely = 'Atomic Habits' + 'x' * TITLE_IMPROVEMENT_MARGIN
-        assert 'title' not in compute_gains(merge({'a': answer(title=barely)}), current, 'HIGH')
-        assert 'title' in compute_gains(merge({'a': answer(title=barely + 'x')}), current, 'HIGH')
+    def test_a_title_that_is_already_a_title_is_left_alone(self):
+        """Length used to decide that longer meant better. Measured across the
+        library it never did: it wrote "On Liberty (Squashed Edition)" over "On
+        Liberty", and a publisher's strapline over "Flock: Ravenhood Book 1".
+        No length limit separates those from real subtitles, which reach 78
+        characters here while that strapline is 80."""
+        merged = merge(
+            {'a': answer(title='Atomic Habits: An Easy and Proven Way to Build Good Habits')},
+            filename_title='Atomic Habits',
+        )
+        assert 'title' not in compute_gains(merged, {'title': 'Atomic Habits'}, 'HIGH')
+
+    @pytest.mark.parametrize('existing', ['', '   ', 'untitled', 'Microsoft Word', 'report.doc'])
+    def test_a_missing_or_fake_title_is_replaced(self, existing):
+        merged = merge({'a': answer(title='Atomic Habits')}, filename_title='Atomic Habits')
+        assert compute_gains(merged, {'title': existing}, 'HIGH')['title'] == 'Atomic Habits'
 
     def test_empty_merge_gains_nothing(self):
         assert compute_gains(merge({}), {}, conf='HIGH') == {}

@@ -18,9 +18,6 @@ from .library import Book, books
 from .sources import SOURCES, Pacer, cache
 from .sources.errors import SourceError, SourceUnavailable
 
-#: A merged title has to beat the existing one by more than this to be worth
-#: writing. Stops churn on trivially different punctuation.
-TITLE_IMPROVEMENT_MARGIN = 3
 #: Sources disagreeing with the filename by more than this are dropped before
 #: merging, so a hallucinated match cannot contribute fields.
 HALLUCINATION_FLOOR = matching.TITLE_WEAK
@@ -326,11 +323,16 @@ def compute_gains(merged: dict[str, Any], current: dict[str, Any], conf: str) ->
         gains['isbn'] = merged['isbn']
     if identified and merged['publisher'] and not current.get('publisher'):
         gains['publisher'] = merged['publisher']
-    if (
-        conf == 'HIGH'
-        and merged['title']
-        and len(merged['title']) > len(current.get('title') or '') + TITLE_IMPROVEMENT_MARGIN
-    ):
+    # A title is filled, never traded for a longer one. Length used to decide
+    # that longer meant better, and measured across the library it never did: it
+    # wrote "On Liberty (Squashed Edition)" over "On Liberty", and a publisher's
+    # strapline, "Flock: The Hottest, Most Addictive Enemies to Lovers Romance
+    # You'll Read All Year", over the perfectly good "Flock: Ravenhood Book 1".
+    # No length limit separates those from real subtitles, which run to 78
+    # characters in this library while that strapline is 80. So a title that is
+    # already a title is left alone, and only a missing or plainly fake one is
+    # replaced.
+    if conf == 'HIGH' and merged['title'] and matching.junky(current.get('title')):
         gains['title'] = merged['title']
     return gains
 
