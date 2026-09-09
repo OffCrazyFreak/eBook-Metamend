@@ -157,12 +157,40 @@ class TestParseOpf:
 class TestJunky:
     @pytest.mark.parametrize(
         'title',
-        ['', '   ', None, 'manuscript.indd', 'Final.doc', 'untitled', 'Microsoft Word', 'NBRT_A01'],
+        [
+            '',
+            '   ',
+            None,
+            'manuscript.indd',
+            'Final.doc',
+            'untitled',
+            'Microsoft Word',
+            'NBRT_A01',
+            'NBRT-A01',
+            'A0123',
+        ],
     )
     def test_junk_titles_are_rejected(self, title):
         assert junky(title) is True
 
-    @pytest.mark.parametrize('title', ['Atomic Habits', 'Artemis', 'On Liberty', 'It'])
+    @pytest.mark.parametrize(
+        'title',
+        [
+            'Atomic Habits',
+            'Artemis',
+            'On Liberty',
+            'It',
+            # All-caps books. Matching bare capitals was survivable while this
+            # only meant "do not copy this onto the PDF twin"; it stopped being
+            # survivable when the same question began deciding whether to
+            # overwrite a title.
+            'DUNE',
+            'IT',
+            'THE ILLUSTRATED MAN',
+            '1984',  # all digits is a year, not a production code
+            'V2',  # too short to be one
+        ],
+    )
     def test_real_titles_are_kept(self, title):
         assert junky(title) is False
 
