@@ -338,3 +338,33 @@ class TestForANameTheDirectionCarriesTheMeaning:
 
     def test_an_exact_author_is_unaffected(self):
         assert best_author_score(['James Clear'], 'James Clear') == 1.0
+
+
+class TestAFilenameMayNameSeveralAuthors:
+    """Scored against the whole string, each real author looks like a truncation
+    of it and is capped below AUTHOR_STRONG, so every co-authored book in the
+    library sat at LOW however exactly the sources agreed on the title."""
+
+    @pytest.mark.parametrize(
+        ('source_authors', 'filename_author'),
+        [
+            (['Colin Bryar', 'Bill Carr'], 'Colin Bryar and Bill Carr'),
+            (['Peter Thiel', 'Blake Masters'], 'Peter Thiel with Blake Masters'),
+            (['Gabriel Weinberg', 'Justin Mares'], 'Gabriel Weinberg and Justin Mares'),
+            (['Nir Eyal'], 'Nir Eyal and Ryan Hoover'),
+            (['Steve Blank & Bob Dorf'], 'Steve Blank and Bob Dorf'),
+        ],
+    )
+    def test_naming_any_one_of_them_is_enough(self, source_authors, filename_author):
+        assert best_author_score(source_authors, filename_author) >= AUTHOR_STRONG
+
+    def test_the_whole_list_still_matches_exactly(self):
+        got = best_author_score(['Colin Bryar and Bill Carr'], 'Colin Bryar and Bill Carr')
+        assert got == 1.0
+
+    def test_an_unrelated_name_is_not_helped_by_the_split(self):
+        assert best_author_score(['Someone Unrelated'], 'Colin Bryar and Bill Carr') < AUTHOR_STRONG
+
+    def test_a_shortened_name_is_still_rejected(self):
+        """The split must not reopen the hole it sits next to."""
+        assert best_author_score(['Colin'], 'Colin Bryar and Bill Carr') < AUTHOR_STRONG

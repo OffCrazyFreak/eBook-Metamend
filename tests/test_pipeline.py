@@ -56,27 +56,68 @@ class TestASequelCannotWinOnLength:
         },
     }
 
-    def test_the_title_the_most_sources_named_wins(self):
-        assert enrich.merge(self.ANSWERS)['title'] == 'Foundation'
+    def test_the_answer_closest_to_the_filename_wins(self):
+        merged = enrich.merge(self.ANSWERS, filename_title='Foundation')
+        assert merged['title'] == 'Foundation'
 
     def test_and_the_other_books_identifiers_come_nowhere_near(self):
-        merged = enrich.merge(self.ANSWERS)
+        merged = enrich.merge(self.ANSWERS, filename_title='Foundation')
         assert merged['isbn'] == ''
         assert merged['publisher'] == 'Gnome Press'
 
-    def test_a_real_subtitle_is_still_preferred_over_the_bare_title(self):
-        """The case longest-wins existed for, and it has to keep working: one
-        source describing the same book more fully, not a different book."""
+
+class TestALongerTitleIsNotABetterOne:
+    """Found by replaying 50 books from the real library. Kobo answered
+    "Essentialism"; Google answered with the separate companion planner. Both
+    name the real author, both are strong, and the planner is a legitimate prefix
+    of nothing but its own name, so the two agreed, reached HIGH, and the planner
+    won on length. The filename is the ground truth everywhere else in this tool,
+    so it decides here too."""
+
+    def test_a_companion_volume_cannot_take_the_title(self):
         answers = {
-            'kobo': {'title': 'Sapiens'},
-            'google': {'title': 'Sapiens: A Brief History of Humankind'},
+            'kobo': {'title': 'Essentialism'},
+            'google': {
+                'title': (
+                    'The Essentialism Planner: A 90-Day Guide to Accomplishing More by Doing Less'
+                )
+            },
         }
-        assert enrich.merge(answers)['title'] == 'Sapiens: A Brief History of Humankind'
+        merged = enrich.merge(answers, filename_title='Essentialism')
+        assert merged['title'] == 'Essentialism'
+
+    def test_nor_can_a_sequel(self):
+        answers = {
+            'kobo': {'title': 'Foundation'},
+            'google': {'title': 'Foundation and Empire'},
+        }
+        assert enrich.merge(answers, filename_title='Foundation')['title'] == 'Foundation'
+
+    @pytest.mark.parametrize(
+        ('offered', 'expected'),
+        [
+            # A colon and a spaced dash both introduce a subtitle.
+            ('Sapiens: A Brief History of Humankind', 'Sapiens: A Brief History of Humankind'),
+            ('Sapiens - A Brief History of Humankind', 'Sapiens - A Brief History of Humankind'),
+            # More title words are not a subtitle.
+            ('Sapiens Illustrated Companion', 'Sapiens'),
+            ('Sapiens and Homo Deus', 'Sapiens'),
+        ],
+    )
+    def test_a_real_subtitle_is_still_added(self, offered, expected):
+        answers = {'kobo': {'title': 'Sapiens'}, 'google': {'title': offered}}
+        assert enrich.merge(answers, filename_title='Sapiens')['title'] == expected
+
+    def test_an_article_is_not_an_improvement_worth_writing(self):
+        """Google answered "The Meditations" for "Meditations". Both normalise
+        the same, so the longer one used to win and propose writing "The"."""
+        answers = {'kobo': {'title': 'Meditations'}, 'google': {'title': 'The Meditations'}}
+        assert enrich.merge(answers, filename_title='Meditations')['title'] == 'Meditations'
 
 
 class TestNothingSurvivesTheAdaptationFilter:
     def test_and_so_nothing_is_proposed_from_it(self):
-        merged = enrich.merge({})
+        merged = enrich.merge({}, filename_title='Anything')
         assert enrich.compute_gains(merged, {}, 'LOW') == {}
 
 

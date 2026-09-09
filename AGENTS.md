@@ -21,6 +21,10 @@ If a change touches anything in `matching.py` or `tags.py`, say so plainly in yo
 
 HIGH requires two independent sources that each identify the book on their own and agree with each other. Do not relax that to one source, and do not let a title from one source pair with an author from another.
 
+Never pick a field by length. Longest-wins looks harmless and has now failed three separate times, on a sequel, a graphic adaptation and a companion planner, each of which is longer than the book it sits beside. The filename decides.
+
+The one exception is deliberate and load-bearing: once the closest answer is chosen, the longest answer proven to be that same title plus a subtitle wins, so `Sapiens: A Brief History of Humankind` still beats `Sapiens`. Do not remove that step.
+
 ## Boundaries
 
 Never:

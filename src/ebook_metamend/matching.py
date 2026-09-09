@@ -161,6 +161,11 @@ def sim(a: str | None, b: str | None, *, prefix_bonus: bool = True) -> float:
     return min(score, ADAPTATION_SCORE) if differently_derived else score
 
 
+#: How a filename names several authors. Commas are deliberately absent:
+#: "Smith, Jr." is one person, not two.
+_AUTHOR_SEPARATOR = re.compile(r'\s+(?:and|with|&)\s+', re.I)
+
+
 def _author_sim(source_author: str, filename_author: str) -> float:
     """Score one source author against the filename's, asymmetrically.
 
@@ -187,8 +192,18 @@ def best_author_score(authors: list[str], filename_author: str) -> float:
     this a useful second signal rather than a formality. Scored per source: the
     maximum across sources would let one answer's title pair with another
     answer's author.
+
+    A filename may name several people, as in "Colin Bryar and Bill Carr".
+    Scored against that whole string, each real author looks like a truncation
+    of it and is capped below AUTHOR_STRONG, so every co-authored book was stuck
+    at LOW however exactly the sources agreed on the title.
     """
-    return max((_author_sim(a, filename_author) for a in authors), default=0.0)
+    names = _AUTHOR_SEPARATOR.split(filename_author)
+    # The whole string as well as the parts, so a source that lists the authors
+    # exactly as the filename does still scores an exact match rather than being
+    # read as one name extending another.
+    expected = names if len(names) == 1 else [filename_author, *names]
+    return max((_author_sim(a, e) for a in authors for e in expected), default=0.0)
 
 
 @dataclass(frozen=True)
