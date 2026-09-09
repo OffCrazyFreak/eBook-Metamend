@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 authors = [{ name = "Jakov Jakovac" }]
 keywords = ["ebook", "epub", "pdf", "metadata", "calibre", "library"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Intended Audience :: End Users/Desktop",
   "License :: OSI Approved :: MIT License",
