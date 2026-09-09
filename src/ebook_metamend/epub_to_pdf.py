@@ -10,40 +10,17 @@ from whatever produced the file (InDesign, a converter) rather than a publisher.
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from . import calibre
 from .library import pairs
+from .matching import junky
 
 #: Author values that mean "nobody filled this in", seen in real files.
 PLACEHOLDER_AUTHORS = (['Unknown'], ['dam'])
 #: A title has to beat the existing one by more than this to be worth copying.
 TITLE_IMPROVEMENT_MARGIN = 3
-
-_EXTENSION_TITLE = re.compile(r'\.(pdf|indd|qxd|doc|docx|tex)$', re.I)
-_PLACEHOLDER_TITLE = re.compile(r'(untitled|microsoft word|book\d*)', re.I)
-#: A short all-caps code such as NBRT_A01. Case sensitive on purpose, so that a
-#: real title like "Artemis" is not mistaken for one.
-_CODE_TITLE = re.compile(r'[A-Z0-9_\-]{1,14}')
-
-
-def junky(title: str | None) -> bool:
-    """True if a title is not really a title.
-
-    Note that an empty title counts as junk. That is the case that makes the
-    copy rule work on PDFs carrying no title at all, and it is why this cannot be
-    replaced by the regexes alone.
-    """
-    title = (title or '').strip()
-    if not title:
-        return True
-    if _EXTENSION_TITLE.search(title):
-        return True
-    if _PLACEHOLDER_TITLE.fullmatch(title):
-        return True
-    return bool(_CODE_TITLE.fullmatch(title))
 
 
 @dataclass

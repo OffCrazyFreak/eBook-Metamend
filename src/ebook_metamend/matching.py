@@ -116,6 +116,40 @@ def looks_derived(title: str | None) -> bool:
     return bool(derived_marker(title))
 
 
+_EXTENSION_TITLE = re.compile(r'\.(pdf|indd|qxd|doc|docx|tex)$', re.I)
+_PLACEHOLDER_TITLE = re.compile(r'(untitled|microsoft word|book\d*)', re.I)
+#: A short all-caps production code such as NBRT_A01, left behind by whatever
+#: typeset the file. Case sensitive on purpose, so "Artemis" is not mistaken for
+#: one, and it must carry a code's shape as well as its case:
+#:
+#: - an underscore, which no title has, or
+#: - letters and digits together, in at least four characters.
+#:
+#: Matching bare capitals was safe while this only meant "do not copy this title
+#: onto the PDF twin". It stopped being safe when the same question started
+#: deciding whether to overwrite a title, because "DUNE" and "IT" are books, and
+#: so is "1984", which is why all digits is not a code either. Four characters
+#: keeps "V2" out of it.
+_CODE_TITLE = re.compile(r'(?=.*_)[A-Z0-9_-]{1,14}$|(?=.*[A-Z])(?=.*[0-9])[A-Z0-9-]{4,14}$')
+
+
+def junky(title: str | None) -> bool:
+    """True if a title is not really a title.
+
+    Note that an empty title counts as junk. That is the case that makes the
+    copy rule work on PDFs carrying no title at all, and it is why this cannot be
+    replaced by the regexes alone.
+    """
+    title = (title or '').strip()
+    if not title:
+        return True
+    if _EXTENSION_TITLE.search(title):
+        return True
+    if _PLACEHOLDER_TITLE.fullmatch(title):
+        return True
+    return bool(_CODE_TITLE.fullmatch(title))
+
+
 def norm(s: str | None) -> str:
     """Lowercase, spell out % and &, drop punctuation and leading articles."""
     s = (s or '').lower().replace('%', ' percent ').replace('&', ' and ')
