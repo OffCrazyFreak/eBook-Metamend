@@ -41,7 +41,7 @@ ADAPTATION_SCORE = 0.55
 _ADAPTATION_MARKERS = re.compile(
     r'\b('
     r'abridge\w*|squashed|condensed\s+(?:edition|version)|'
-    r'graphic\s+novel|illustrated\s+adaptation|'
+    r'graphic\s+(?:novel|history|adaptation)|illustrated(?:\s+adaptation)?|'
     r'adapted\s+for|young\s+(?:readers?|adults?)\s+edition|'
     r'summary\s+(?:of|and\s+analysis)|workbook|study\s+guide|'
     r'box(?:ed)?\s+set'
@@ -52,9 +52,16 @@ _ADAPTATION_MARKERS = re.compile(
 #: use: "(Tamil)", "[Tamil]" and ", Tamil Edition". Enumerating languages alone
 #: was incomplete by construction, and every gap scored a clean prefix match, so
 #: the shape is matched too.
+_EDITION_WORD = r'(?:edition|ed\.|translation|version)'
 _EDITION_SUFFIX = re.compile(
-    r'[\s,]*[(\[][^)\]]*\b(?:edition|ed\.|translation|version)\b[^)\]]*[)\]]\s*$'
-    r'|,\s*\w+\s+edition\s*$',
+    # "(Tamil Edition)" and "[Illustrated Edition]"
+    rf'[\s,]*[(\[][^)\]]*\b{_EDITION_WORD}\b[^)\]]*[)\]]\s*$'
+    # ", Tamil Edition" and ": Illustrated Edition" and " - Tamil Edition".
+    # The bare separators were missing, and they are the commonest form of all:
+    # a source returning "Atomic Habits: Tamil Edition" scored a clean 0.95
+    # prefix match and would have overwritten the correct title.
+    rf'|[,:]\s*[\w\s]{{1,30}}?\b{_EDITION_WORD}\s*$'
+    rf'|\s+-\s+[\w\s]{{1,30}}?\b{_EDITION_WORD}\s*$',
     re.I,
 )
 #: A parenthesised or bracketed language, as publishers mark translations.
@@ -72,6 +79,26 @@ _TRANSLATION_MARKER = re.compile(
 )
 
 
+def derived_marker(title: str | None) -> str:
+    """The words that mark a title as a derived work, or '' if there are none.
+
+    Returned rather than a bare boolean because two derived titles are only the
+    same book when they are derived the *same way*. "Ulysses (Annotated
+    Edition)" and "Ulysses (Annotated Edition, Abridged)" are not.
+    """
+    text = title or ''
+    found = [
+        match.group(0).strip(' ,:-')
+        for match in (
+            _ADAPTATION_MARKERS.search(text),
+            _TRANSLATION_MARKER.search(text),
+            _EDITION_SUFFIX.search(text),
+        )
+        if match
+    ]
+    return ' '.join(sorted(part.lower() for part in found))
+
+
 def looks_derived(title: str | None) -> bool:
     """True if a title describes an adaptation, abridgement or translation.
 
@@ -79,23 +106,18 @@ def looks_derived(title: str | None) -> bool:
     simply not the book on disk, and writing their title over the original is the
     failure this library has already suffered once.
     """
-    text = title or ''
-    return bool(
-        _ADAPTATION_MARKERS.search(text)
-        or _TRANSLATION_MARKER.search(text)
-        or _EDITION_SUFFIX.search(text)
-    )
+    return bool(derived_marker(title))
 
 
 def norm(s: str | None) -> str:
     """Lowercase, spell out % and &, drop punctuation and leading articles."""
     s = (s or '').lower().replace('%', ' percent ').replace('&', ' and ')
     s = re.sub(r'[^a-z0-9 ]', ' ', s)
-    s = re.sub(r'\b(the|a|an)\b', ' ', s)
+    s = re.sub(r'^(the|a|an)\b', ' ', s)
     return re.sub(r'\s+', ' ', s).strip()
 
 
-def sim(a: str | None, b: str | None) -> float:
+def sim(a: str | None, b: str | None, *, prefix_bonus: bool = True) -> float:
     """Similarity of two titles, 0.0 to 1.0.
 
     Containment is strong evidence but not proof, so it is split in two:
@@ -109,22 +131,46 @@ def sim(a: str | None, b: str | None) -> float:
       single volume's metadata.
     """
     # Checked before normalising, which strips the punctuation these rely on.
-    derived = looks_derived(a) != looks_derived(b)
+    # Comparing the markers rather than two booleans is what catches the case
+    # where *both* titles are derived but differently: an XOR saw those as a
+    # matched pair and applied no penalty at all.
+    differently_derived = derived_marker(a) != derived_marker(b)
 
     a, b = norm(a), norm(b)
     if not a or not b:
         return 0.0
     if a == b:
         score = 1.0
-    elif a in b or b in a:
+    elif f' {a} ' in f' {b} ' or f' {b} ' in f' {a} ':
+        # Padded, so containment is whole words. A raw substring test scored
+        # "It" inside "Italian Cooking" as a 0.95 prefix match.
         short, long = (a, b) if len(a) <= len(b) else (b, a)
-        score = PREFIX_SCORE if long.startswith(short) else CONTAINED_SCORE
+        score = PREFIX_SCORE if prefix_bonus and long.startswith(short) else CONTAINED_SCORE
     else:
         score = difflib.SequenceMatcher(None, a, b).ratio()
 
-    # One side is a derived work and the other is not, so they are different
-    # books however similar the words are.
-    return min(score, ADAPTATION_SCORE) if derived else score
+    # The two describe differently derived works, so they are different books
+    # however similar the words are.
+    return min(score, ADAPTATION_SCORE) if differently_derived else score
+
+
+def _author_sim(source_author: str, filename_author: str) -> float:
+    """Score one source author against the filename's, asymmetrically.
+
+    The prefix bonus exists for "title: subtitle" and it is only half right for a
+    person, because for a name the direction carries the meaning:
+
+    - A source name that *extends* the filename's is the same person written more
+      fully. Real answers included "Harvey Karp, M. D." for "Harvey Karp", and
+      credentials, middle names and suffixes are the normal catalogue form.
+    - A source name that *shortens* it is under-specified and could be somebody
+      else entirely. "Zadie" is not evidence for "Zadie Smith", and it used to
+      score 0.95 and clear AUTHOR_STRONG on its own.
+    """
+    source, expected = norm(source_author), norm(filename_author)
+    truncated = bool(source) and source != expected and f' {source} ' in f' {expected} '
+    score = sim(source_author, filename_author)
+    return min(score, CONTAINED_SCORE) if truncated else score
 
 
 def best_author_score(authors: list[str], filename_author: str) -> float:
@@ -135,7 +181,7 @@ def best_author_score(authors: list[str], filename_author: str) -> float:
     maximum across sources would let one answer's title pair with another
     answer's author.
     """
-    return max((sim(a, filename_author) for a in authors), default=0.0)
+    return max((_author_sim(a, filename_author) for a in authors), default=0.0)
 
 
 @dataclass(frozen=True)

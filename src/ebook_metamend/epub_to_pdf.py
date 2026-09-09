@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from . import calibre
 from .library import pairs
@@ -50,13 +50,11 @@ def junky(title: str | None) -> bool:
 class Results:
     total: int = 0
     changed: int = 0
-    lines: list[str] = field(default_factory=list)
 
 
 def _emit(results: Results, on_line: Callable[[str], None] | None, line: str) -> None:
-    """Record and report a line as it happens. Buffering the whole run meant an
-    interrupted --apply lost the record of PDFs it had already written."""
-    results.lines.append(line)
+    """Report a line as it happens. Buffering the whole run meant an interrupted
+    --apply lost the record of PDFs it had already written."""
     if on_line:
         on_line(line)
 

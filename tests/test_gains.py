@@ -286,7 +286,7 @@ class TestFieldsComeFromTheSourcesThatEarnedConfidence:
         from ebook_metamend.matching import ADAPTATION_SCORE
 
         scores = self._scores(('google', 'Atomic Habits (Tamil)', ADAPTATION_SCORE, 1.0))
-        assert trusted_names(scores) == ['google'], 'sole source is still reported'
+        assert trusted_names(scores) == [], 'a lone adaptation supplies nothing at all'
 
         with_real = self._scores(
             ('kobo', 'Atomic Habits', 1.0, 1.0),

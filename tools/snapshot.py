@@ -24,12 +24,41 @@ import zipfile
 from xml.etree import ElementTree as ET
 
 DC = '{http://purl.org/dc/elements/1.1/}'
-CAL_ROOT = os.environ.get('CAL_ROOT', '/tmp/cal')
+#: Bumped whenever what is hashed or recorded changes. Two snapshots taken by
+#: different versions of this file are not comparable, and comparing them anyway
+#: reports every book as content-changed: a false alarm from the one tool whose
+#: job is to be trusted about real ones.
+SNAPSHOT_FORMAT = 2
+
+CONTAINER = 'META-INF/container.xml'
+CONTAINER_NS = '{urn:oasis:names:tc:opendocument:xmlns:container}'
 
 # Fields that describe the book, versus the bytes that are the book. A change to
 # the first set is the tool doing its job; a change to the second set is damage.
 META_FIELDS = ('title', 'authors', 'tags', 'publisher', 'isbn', 'series', 'description_len')
 CONTENT_FIELDS = ('text_sha256', 'page_count', 'zip_ok')
+
+
+def _opf_name(z: zipfile.ZipFile) -> str:
+    """The OPF the EPUB declares, not the first one in zip order.
+
+    Deliberately re-implemented rather than imported from the package. This file
+    is the safety net for --apply: if it borrowed the package's OPF resolution it
+    would inherit any bug in it and agree with a wrong write.
+
+    An EPUB may carry several .opf members (a stale calibre_bkp.opf is common) and
+    zip order means nothing, so picking the first can hash a package the reader
+    never sees and report "unchanged" after a write that did change the book.
+    """
+    try:
+        container = ET.fromstring(z.read(CONTAINER).decode('utf8', 'ignore'))
+        rootfile = container.find(f'.//{CONTAINER_NS}rootfile')
+        declared = rootfile is not None and rootfile.get('full-path')
+        if declared and declared in z.namelist():
+            return declared
+    except (KeyError, ET.ParseError):
+        pass
+    return next(n for n in z.namelist() if n.lower().endswith('.opf'))
 
 
 def _norm_text(s: str) -> str:
@@ -46,8 +75,7 @@ def _epub(path: str) -> dict:
         return out
 
     try:
-        opf = next(n for n in z.namelist() if n.lower().endswith('.opf'))
-        root = ET.fromstring(z.read(opf).decode('utf8', 'ignore'))
+        root = ET.fromstring(z.read(_opf_name(z)).decode('utf8', 'ignore'))
 
         def g(tag):
             return [(e.text or '').strip() for e in root.iter(DC + tag) if (e.text or '').strip()]
@@ -116,7 +144,7 @@ def _pdf(path: str) -> dict:
 
 
 def take(root: str) -> dict:
-    snap = {}
+    records = {}
     for dirpath, _, files in os.walk(root):
         for f in sorted(files):
             p = os.path.join(dirpath, f)
@@ -125,12 +153,25 @@ def take(root: str) -> dict:
                 continue
             rec = _epub(p) if ext == '.epub' else _pdf(p)
             rec['size'] = os.path.getsize(p)
-            snap[os.path.relpath(p, root)] = rec
-    return snap
+            records[os.path.relpath(p, root)] = rec
+    return {'format': SNAPSHOT_FORMAT, 'root': root, 'files': records}
+
+
+def _files(snap: dict, label: str) -> dict:
+    """The file map, refusing a snapshot this version cannot compare."""
+    version = snap.get('format')
+    if version != SNAPSHOT_FORMAT:
+        raise SystemExit(
+            f'{label} was written in snapshot format {version!r}, this tool reads '
+            f'{SNAPSHOT_FORMAT}. Retake it; comparing across formats reports '
+            f'false content changes.'
+        )
+    return snap['files']
 
 
 def compare(before: dict, after: dict) -> dict:
     """Classify every path. Walks the union, so additions and removals are visible."""
+    before, after = _files(before, 'before'), _files(after, 'after')
     result = {
         'added': [],
         'removed': [],

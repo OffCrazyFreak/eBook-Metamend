@@ -42,7 +42,7 @@ CONTAINER = 'META-INF/container.xml'
 _CONTAINER_NS = '{urn:oasis:names:tc:opendocument:xmlns:container}'
 
 
-def _read_limited(archive: zipfile.ZipFile, name: str) -> bytes:
+def read_limited(archive: zipfile.ZipFile, name: str) -> bytes:
     """Read a member, refusing one that expands beyond MAX_METADATA_BYTES."""
     info = archive.getinfo(name)
     if info.file_size > MAX_METADATA_BYTES:
@@ -63,7 +63,7 @@ def opf_name(archive: zipfile.ZipFile) -> str | None:
     container is missing or unreadable.
     """
     try:
-        container = ET.fromstring(_read_limited(archive, CONTAINER).decode('utf8', 'ignore'))
+        container = ET.fromstring(read_limited(archive, CONTAINER).decode('utf8', 'ignore'))
         rootfile = container.find(f'.//{_CONTAINER_NS}rootfile')
         declared = rootfile is not None and rootfile.get('full-path')
         if declared and declared in archive.namelist():
@@ -142,7 +142,7 @@ def read_epub_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[s
             name = opf_name(z)
             if name is None:
                 return None
-            root = ET.fromstring(_read_limited(z, name).decode('utf8', 'ignore'))
+            root = ET.fromstring(read_limited(z, name).decode('utf8', 'ignore'))
     except (OSError, KeyError, ValueError, StopIteration, zipfile.BadZipFile, ET.ParseError):
         return None
     return opf.parse_root(root, bare_isbn_fallback=bare_isbn_fallback)

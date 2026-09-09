@@ -39,7 +39,7 @@ def epub_meta_and_text(path: str) -> tuple[dict[str, Any], str]:
         names = z.namelist()
         opf_name = calibre.opf_name(z)
         if opf_name:
-            root = ET.fromstring(z.read(opf_name).decode('utf8', 'ignore'))
+            root = ET.fromstring(calibre.read_limited(z, opf_name).decode('utf8', 'ignore'))
             record = opf.parse_root(root)
             meta = {
                 'title': record['title'],
@@ -51,7 +51,9 @@ def epub_meta_and_text(path: str) -> tuple[dict[str, Any], str]:
             }
         documents = sorted(n for n in names if n.lower().endswith(('.xhtml', '.html', '.htm')))
         for name in documents[:MAX_DOCUMENTS]:
-            raw = _SCRIPT_OR_STYLE.sub(' ', z.read(name).decode('utf8', 'ignore'))
+            # Bounded like the OPF above: an EPUB is an untrusted archive and a
+            # deflate-bombed chapter would otherwise be expanded in full.
+            raw = _SCRIPT_OR_STYLE.sub(' ', calibre.read_limited(z, name).decode('utf8', 'ignore'))
             chunk = re.sub(r'\s+', ' ', html.unescape(_TAG.sub(' ', raw))).strip()
             if len(chunk) > 40:
                 text += ' ' + chunk

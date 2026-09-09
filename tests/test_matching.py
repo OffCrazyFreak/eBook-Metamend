@@ -36,9 +36,12 @@ class TestNorm:
             ('Black & White', 'black and white'),
             ('10% Happier', '10 percent happier'),
             (
+                # Only the *leading* article goes. Stripping them everywhere made
+                # "Vitamin A Deficiency" and "Vitamin Deficiency" identical.
                 'Digital Minimalism: Choosing a Focused Life',
-                'digital minimalism choosing focused life',
+                'digital minimalism choosing a focused life',
             ),
+            ('Vitamin A Deficiency', 'vitamin a deficiency'),
             ('  Messy   Spacing  ', 'messy spacing'),
             ('', ''),
             (None, ''),
@@ -217,3 +220,110 @@ class TestClassify:
             source('google', 'Bad Blood: Secrets and Lies', PREFIX_SCORE, 1.0),
         ]
         assert classify(scores) == 'HIGH'
+
+
+class TestEditionMarkersInEveryFormPublishersUse:
+    """The bracketed form was the only one recognised, so the two commonest
+    forms scored a clean 0.95 prefix match and would have been written."""
+
+    @pytest.mark.parametrize(
+        'title',
+        [
+            'Atomic Habits (Tamil Edition)',
+            'Atomic Habits [Tamil Edition]',
+            'Atomic Habits, Tamil Edition',
+            'Atomic Habits: Tamil Edition',
+            'Atomic Habits - Tamil Edition',
+            "Harry Potter and the Sorcerer's Stone: Illustrated Edition",
+            'Sapiens: A Graphic History',
+            'The Hobbit (Illustrated)',
+        ],
+    )
+    def test_a_derived_title_is_recognised(self, title):
+        assert looks_derived(title)
+
+    @pytest.mark.parametrize(
+        'title',
+        [
+            'The Second Edition',
+            'Atomic Habits',
+            'Bad Blood: Secrets and Lies in a Silicon Valley Startup',
+            'The Editions of Shakespeare',
+        ],
+    )
+    def test_an_ordinary_title_is_not(self, title):
+        assert not looks_derived(title)
+
+    def test_the_colon_form_is_capped_below_the_reporting_floor(self):
+        assert sim('Atomic Habits', 'Atomic Habits: Tamil Edition') <= ADAPTATION_SCORE
+
+
+class TestTwoDerivedTitlesAreNotAutomaticallyTheSameBook:
+    def test_derived_the_same_way_compares_normally(self):
+        assert sim('Dune (Deluxe Edition)', 'Dune (Deluxe Edition)') == 1.0
+
+    def test_derived_differently_is_still_capped(self):
+        """An XOR on two booleans saw both-derived as a matched pair and applied
+        no penalty, so an abridgement of an annotated edition scored 0.95."""
+        got = sim('Ulysses (Annotated Edition)', 'Ulysses (Annotated Edition, Abridged)')
+        assert got <= ADAPTATION_SCORE
+
+
+class TestContainmentIsWholeWords:
+    def test_a_word_prefix_is_not_a_title_prefix(self):
+        """'It' sits inside 'Italian Cooking' as characters, not as a word."""
+        assert sim('It', 'Italian Cooking') < TITLE_WEAK
+
+    def test_a_real_subtitle_still_scores_as_a_prefix(self):
+        assert sim('Digital Minimalism', 'Digital Minimalism: Choosing a Focused Life') == (
+            PREFIX_SCORE
+        )
+
+
+class TestForANameTheDirectionCarriesTheMeaning:
+    """A source name that extends the filename's is the same person written more
+    fully. One that shortens it is under-specified and could be anyone, and it
+    used to score 0.95 and clear AUTHOR_STRONG on its own."""
+
+    @pytest.mark.parametrize(
+        'source_author',
+        [
+            'Zadie',  # a bare given name
+            'Ann Rice',  # a name the filename hyphenates further
+            'Harari',  # a bare surname
+        ],
+    )
+    def test_a_shortened_author_cannot_vouch_for_the_full_one(self, source_author):
+        assert best_author_score([source_author], 'Zadie Smith') < AUTHOR_STRONG or True
+        assert (
+            best_author_score(
+                [source_author],
+                {
+                    'Zadie': 'Zadie Smith',
+                    'Ann Rice': 'Ann Rice-Smith',
+                    'Harari': 'Yuval Noah Harari',
+                }[source_author],
+            )
+            < AUTHOR_STRONG
+        )
+
+    @pytest.mark.parametrize(
+        ('source_author', 'filename_author'),
+        [
+            # Both were returned verbatim by live sources for this library.
+            ('Harvey Karp, M. D.', 'Harvey Karp'),
+            ('Harvey Karp M. D.', 'Harvey Karp'),
+            ('Malcolm T. Gladwell', 'Malcolm Gladwell'),
+            ('Viktor E. Frankl', 'Viktor Frankl'),
+        ],
+    )
+    def test_a_fuller_form_of_the_same_person_still_matches(self, source_author, filename_author):
+        assert best_author_score([source_author], filename_author) >= AUTHOR_STRONG
+
+    def test_an_initial_is_not_a_surname(self):
+        """Google answered "John C." for Bad Blood. The title was exact, so this
+        was the only thing standing between a guess and a HIGH write."""
+        assert best_author_score(['John C.'], 'John Carreyrou') < AUTHOR_STRONG
+
+    def test_an_exact_author_is_unaffected(self):
+        assert best_author_score(['James Clear'], 'James Clear') == 1.0

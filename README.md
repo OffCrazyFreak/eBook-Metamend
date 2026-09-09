@@ -20,7 +20,7 @@ Three sources are queried per book. Every answer is scored against the filename 
 | ---------- | --------- | -------- |
 | **HIGH** | **two** sources each match the filename's title (>=0.85) **and** its author (>=0.7) **on their own**, and agree with each other | yes |
 | **MED** | one source manages that, or the evidence is weaker | only with `--include-low` |
-| **LOW** | anything else | no |
+| **LOW** | anything else | only with `--include-low` |
 
 **One source is never enough.** Measured on a real library, a single source returned an abridgement (`On Liberty (Squashed Edition)`), a translation (`Atomic Habits (Tamil)`) and a different book entirely (`Revenge of the Tipping Point`) for three correctly named files. Each would have been written. A second source disagreed with all three.
 
@@ -28,7 +28,9 @@ Both signals must also come from the *same* source. Taking the best title from o
 
 The cost is deliberate: a book only one source knows, typically self-published or niche, cannot reach HIGH and needs `--include-low`.
 
-Dry run is the default. Nothing is ever blanked. Every run leaves a JSON record of what it decided and why.
+Only the sources that earned the confidence may supply the fields, and identifiers (ISBN, publisher, series) come only from a source that named the winning title, because those describe one specific edition.
+
+Dry run is the default. Nothing is ever blanked, and the only existing field that can be replaced rather than filled is the description, which needs HIGH to do it. Every run leaves a JSON record of what it decided and why.
 
 ## Quick start
 
@@ -103,9 +105,9 @@ Books are expected to be named `Author - Title - Subtitle.epub`, optionally with
 Naive string similarity fails on real book titles, so two cases are handled specially:
 
 - **Prefix containment is legitimate.** "Digital Minimalism" vs "Digital Minimalism: Choosing a Focused Life in a Noisy World" is the same book, main title plus subtitle. Scored 0.95.
-- **Non-prefix containment is suspicious.** An omnibus titled "The Happiest Baby on the Block and The Happiest Toddler on the Block" contains the title of a book it is not. Capped at 0.70, deliberately below the threshold that would let it be written.
+- **Non-prefix containment is suspicious.** An omnibus titled "The Happiest Baby on the Block and The Happiest Toddler on the Block" contains the title of a book it is not. Capped at 0.69, deliberately below both the threshold that would let it be written and the one that lets an author vouch for a match.
 
-A third case is handled separately. **Adaptations and translations are different books that share a title**, so `On Liberty (Squashed Edition)`, `Atomic Habits (Tamil)`, `The Alchemist Graphic Novel` and `Man's Search for Meaning adapted for Young Adults` are capped at 0.60, below the writing threshold. Every one of those was returned by a live source for the correctly named file.
+A third case is handled separately. **Adaptations and translations are different books that share a title**, so `On Liberty (Squashed Edition)`, `Atomic Habits (Tamil)`, `The Alchemist Graphic Novel` and `Man's Search for Meaning adapted for Young Adults` are capped at 0.55, below even the floor at which a source may contribute a field at all. Every one of those was returned by a live source for the correctly named file.
 
 All three cases are pinned by the test suite, because they are the difference between a repaired library and a ruined one.
 
@@ -117,7 +119,7 @@ Answer rates measured on the same 10-book sample, in one run. Behaviour is from 
 | ------ | -------- | --------- |
 | Kobo | 10/10 | Best coverage and the most accurate on editions. Invents a match when it has none, so never trust it alone |
 | Google Books | 8/10 | Answers confidently with adaptations, translations and sequels. Needs a second opinion |
-| Open Library | 0/10 | Thinner catalogue, and unreliable in practice: HTTP 500s, connection resets and TLS handshake timeouts. Reports its failures rather than passing them off as "not found" |
+| Open Library | 0/10 | Thinner catalogue, and unreachable from the machine this was measured on: the TLS handshake to `openlibrary.org` times out most attempts while the rest of the same infrastructure responds instantly. It reports its failures rather than passing them off as "not found", and a source that fails several books in a row is shelved for the rest of the run |
 | Goodreads | - | Blocks after a single request. Not used |
 | Amazon | - | Returns SEO spam. Not used |
 
