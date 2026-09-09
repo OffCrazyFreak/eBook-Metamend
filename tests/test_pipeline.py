@@ -56,22 +56,14 @@ class TestASequelCannotWinOnLength:
         },
     }
 
-    def test_the_title_the_most_sources_named_wins(self):
-        assert enrich.merge(self.ANSWERS)['title'] == 'Foundation'
+    def test_the_answer_closest_to_the_filename_wins(self):
+        merged = enrich.merge(self.ANSWERS, filename_title='Foundation')
+        assert merged['title'] == 'Foundation'
 
     def test_and_the_other_books_identifiers_come_nowhere_near(self):
-        merged = enrich.merge(self.ANSWERS)
+        merged = enrich.merge(self.ANSWERS, filename_title='Foundation')
         assert merged['isbn'] == ''
         assert merged['publisher'] == 'Gnome Press'
-
-    def test_a_real_subtitle_is_still_preferred_over_the_bare_title(self):
-        """The case longest-wins existed for, and it has to keep working: one
-        source describing the same book more fully, not a different book."""
-        answers = {
-            'kobo': {'title': 'Sapiens'},
-            'google': {'title': 'Sapiens: A Brief History of Humankind'},
-        }
-        assert enrich.merge(answers)['title'] == 'Sapiens: A Brief History of Humankind'
 
 
 class TestALongerTitleIsNotABetterOne:
@@ -91,7 +83,8 @@ class TestALongerTitleIsNotABetterOne:
                 )
             },
         }
-        assert enrich.merge(answers, filename_title='Essentialism')['title'] == 'Essentialism'
+        merged = enrich.merge(answers, filename_title='Essentialism')
+        assert merged['title'] == 'Essentialism'
 
     def test_nor_can_a_sequel(self):
         answers = {
@@ -124,7 +117,7 @@ class TestALongerTitleIsNotABetterOne:
 
 class TestNothingSurvivesTheAdaptationFilter:
     def test_and_so_nothing_is_proposed_from_it(self):
-        merged = enrich.merge({})
+        merged = enrich.merge({}, filename_title='Anything')
         assert enrich.compute_gains(merged, {}, 'LOW') == {}
 
 

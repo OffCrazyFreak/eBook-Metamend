@@ -261,12 +261,15 @@ def _best_title(titles: list[str], filename_title: str) -> str:
 
 
 def merge(
-    answers: dict[str, dict[str, Any]], author: str = '', filename_title: str = ''
+    answers: dict[str, dict[str, Any]], author: str = '', *, filename_title: str
 ) -> dict[str, Any]:
     """Combine surviving answers into one candidate record.
 
     ``author`` is passed through to the tag cleaner, which needs it to tell a
     person's name apart from an identically shaped place-and-period heading.
+    ``filename_title`` is required rather than defaulted: an empty one scores
+    0.0 against every candidate, which would silently put title selection back
+    on length.
 
     Fields are taken from two different pools on purpose:
 
@@ -380,7 +383,7 @@ def propose(book: Book) -> Proposal | None:
     # that were there all along. Propose nothing instead.
     current = calibre.read_book_metadata(book.any_path)
     unreadable = current is None
-    merged = merge(surviving, facts.author, facts.title)
+    merged = merge(surviving, facts.author, filename_title=facts.title)
 
     return Proposal(
         stem=book.stem,

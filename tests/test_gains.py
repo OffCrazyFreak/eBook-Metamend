@@ -11,8 +11,19 @@ from ebook_metamend.enrich import (
     TITLE_IMPROVEMENT_MARGIN,
     build_write_args,
     compute_gains,
-    merge,
 )
+from ebook_metamend.enrich import merge as _merge
+
+
+def merge(answers, author='', filename_title='Example Title'):
+    """``enrich.merge`` with a filename title supplied.
+
+    Required there on purpose: an empty one scores 0.0 against every candidate
+    and would put title selection back on length. Most tests below are about
+    tags, identifiers or descriptions and do not care which title wins, so they
+    get a placeholder; the tests that are about titles pass a real one.
+    """
+    return _merge(answers, author, filename_title=filename_title)
 
 
 def answer(**overrides):
@@ -116,7 +127,10 @@ class TestComputeGains:
         )
 
     def test_title_is_only_gained_at_high_confidence(self):
-        merged = merge({'a': answer(title='Atomic Habits: An Easy and Proven Way')})
+        merged = merge(
+            {'a': answer(title='Atomic Habits: An Easy and Proven Way')},
+            filename_title='Atomic Habits',
+        )
         current = {'title': 'Atomic Habits'}
         assert 'title' in compute_gains(merged, current, conf='HIGH')
         for conf in ('MED', 'LOW'):
@@ -227,28 +241,32 @@ class TestUnreadableMetadata:
 
 
 class TestDerivedTitlesInMerge:
-    """Longest-wins is right for subtitles and wrong for adaptations."""
+    """The closest answer to the filename wins, then a subtitle if one is offered."""
 
     def test_a_genuine_title_beats_a_longer_adaptation(self):
         merged = merge(
             {
                 'kobo': answer(title='On Liberty'),
                 'google': answer(title='On Liberty (Squashed Edition)'),
-            }
+            },
+            filename_title='On Liberty',
         )
         assert merged['title'] == 'On Liberty'
 
-    def test_the_longest_genuine_title_still_wins(self):
+    def test_a_subtitle_is_still_an_improvement(self):
         merged = merge(
             {
                 'kobo': answer(title='Bad Blood'),
                 'google': answer(title='Bad Blood: Secrets and Lies'),
-            }
+            },
+            filename_title='Bad Blood',
         )
         assert merged['title'] == 'Bad Blood: Secrets and Lies'
 
     def test_an_adaptation_is_used_only_when_it_is_all_there_is(self):
-        merged = merge({'google': answer(title='Atomic Habits (Tamil)')})
+        merged = merge(
+            {'google': answer(title='Atomic Habits (Tamil)')}, filename_title='Atomic Habits'
+        )
         assert merged['title'] == 'Atomic Habits (Tamil)'
 
 
