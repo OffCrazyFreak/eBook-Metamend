@@ -25,6 +25,12 @@ TITLE_IMPROVEMENT_MARGIN = 3
 HALLUCINATION_FLOOR = matching.TITLE_WEAK
 #: Merged tag lists get long and unranked. Only the head is useful.
 MAX_MERGED_TAGS = 12
+#: A source that fails this many books in a row is shelved for the rest of the
+#: run. Backing off is right for a source having a bad minute, but wrong for one
+#: whose network path is simply broken: measured on this machine, Open Library
+#: failed its TLS handshake on every book and charged the full timeout for each,
+#: which was the largest single cost in a run and never produced an answer.
+MAX_CONSECUTIVE_FAILURES = 3
 
 
 @dataclass
@@ -50,10 +56,6 @@ class Proposal:
     #: Populated only when a write was attempted. Not serialised.
     writes: list[tuple[str, bool, str]] = field(default_factory=list, repr=False)
 
-    @property
-    def applicable(self) -> bool:
-        return bool(self.gains)
-
     def to_dict(self) -> dict[str, Any]:
         """The serialised form. Explicit rather than ``asdict`` so that adding a
         reporting field can never change the on-disk record."""
@@ -76,6 +78,8 @@ unavailable_sources: dict[str, str] = {}
 
 #: Shared across a run so back-off carries between books. Reset by run().
 _pacer = Pacer()
+#: Consecutive transport failures per source, for the shelving rule above.
+_failures: dict[str, int] = {}
 
 
 def reset_run_state() -> None:
@@ -87,6 +91,7 @@ def reset_run_state() -> None:
     """
     global _pacer
     unavailable_sources.clear()
+    _failures.clear()
     _pacer = Pacer()
 
 
@@ -107,14 +112,22 @@ def query_sources(title: str, author: str, *, pause: bool = True) -> dict[str, d
             unavailable_sources[source.name] = str(exc)
             continue
         except SourceError as exc:
-            # Transient. Back off, but keep asking on later books.
+            # Transient, so back off and keep asking. Unless it keeps happening,
+            # in which case it is not transient and every further attempt is a
+            # timeout charged to the user for nothing.
             print(f'{source.name}: {exc}', file=sys.stderr)
             _pacer.record(source.name, answered=False)
+            _failures[source.name] = _failures.get(source.name, 0) + 1
+            if _failures[source.name] >= MAX_CONSECUTIVE_FAILURES:
+                unavailable_sources[source.name] = (
+                    f'failed {_failures[source.name]} books in a row, last error: {exc}'
+                )
             answer = None
         else:
             # Having no entry for a book is not a failure. Google misses by
             # design, and treating that as rate-limiting used to escalate its
             # pause to the ceiling and keep it there.
+            _failures[source.name] = 0
             _pacer.record(source.name, answered=True)
 
         if answer:
@@ -146,25 +159,40 @@ def score(answers: dict[str, dict[str, Any]], facts) -> tuple[list[matching.Sour
 def trusted_names(scores: list[matching.SourceScore]) -> list[str]:
     """Which sources may contribute metadata, not merely confidence.
 
-    Confidence and content were previously decided separately: two strong
-    sources earned HIGH, and then the longest title among everything above the
-    floor was written, which could be a third answer that identified a different
-    book. A graphic adaptation or a translation would win on length and donate
-    its ISBN and publisher too.
+    The answers that earn the confidence are the answers that supply the fields.
+    Returning every *strong* source was not enough: strength is measured against
+    the filename alone, so a sequel whose title extends the real one scores 0.95
+    and is strong while agreeing with nobody. Measured live, that let Open
+    Library write "Foundation and Empire", and its ISBN, onto "Foundation" at
+    HIGH with no override.
 
-    So the answers that earn the confidence are the answers that supply the
-    fields. Only if none is strong do weaker ones get a say, and a recognised
-    adaptation never does.
+    So when a pair has agreed, only the members of that agreement may
+    contribute. Weaker sources get a say only when none is strong, and a
+    recognised adaptation never does, even if it is the only answer there is.
     """
-    strong = [s.name for s in scores if s.strong]
+    strong = [s for s in scores if s.strong]
+    agreeing = [
+        one.name
+        for index, one in enumerate(strong)
+        if any(
+            matching.sim(one.title, other.title) >= matching.CROSS_SOURCE_AGREE
+            for position, other in enumerate(strong)
+            if position != index
+        )
+    ]
+    if agreeing:
+        return agreeing
     if strong:
-        return strong
-    usable = [
+        return [s.name for s in strong]
+    # No fallback to "everything". When every answer is a recognised adaptation
+    # this is empty, nothing is merged and nothing is proposed, which is the
+    # correct outcome: an abridgement's ISBN and publisher are not the book's.
+    # Comparison matches classify(), which uses >= on the same constant.
+    return [
         s.name
         for s in scores
-        if s.title_score > HALLUCINATION_FLOOR and not matching.looks_derived(s.title)
+        if s.title_score >= HALLUCINATION_FLOOR and not matching.looks_derived(s.title)
     ]
-    return usable or [s.name for s in scores]
 
 
 def _ranked_tags(answers: list[dict[str, Any]]) -> list[str]:
@@ -186,29 +214,59 @@ def _ranked_tags(answers: list[dict[str, Any]]) -> list[str]:
     return sorted(votes, key=lambda t: (-votes[t], order[t]))
 
 
-def merge(answers: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _best_title(titles: list[str]) -> str:
+    """The title the most sources named, then the longest of those.
+
+    Longest-wins alone is right for subtitles and wrong for sequels. "Foundation
+    and Empire" is longer than "Foundation" and is a legitimate prefix extension
+    of it, so it wins on length and it agrees on similarity. Counting sources
+    first separates the two cases without a new threshold: a subtitle is one
+    source describing the same book more fully, a sequel is one source out of
+    three describing a different one.
+
+    Derived works are dropped first, unless every answer is one.
+    """
+    genuine = [t for t in titles if not matching.looks_derived(t)] or titles
+    if not genuine:
+        return ''
+    votes: dict[str, int] = {}
+    for title in genuine:
+        votes[matching.norm(title)] = votes.get(matching.norm(title), 0) + 1
+    winner = max(
+        votes, key=lambda key: (votes[key], max(len(t) for t in genuine if matching.norm(t) == key))
+    )
+    return max((t for t in genuine if matching.norm(t) == winner), key=len)
+
+
+def merge(answers: dict[str, dict[str, Any]], author: str = '') -> dict[str, Any]:
     """Combine surviving answers into one candidate record.
 
-    Longest wins for free text, first non-empty for identifiers. Tags are the
-    union, because sources cover different vocabularies.
+    ``author`` is passed through to the tag cleaner, which needs it to tell a
+    person's name apart from an identically shaped place-and-period heading.
+
+    Fields are taken from two different pools on purpose:
+
+    - **Identifiers** (ISBN, publisher, series) describe one specific edition, so
+      they may only come from a source that named the winning title. Measured
+      live, taking the first non-empty across every answer wrote a sequel's ISBN
+      onto a book whose title had been decided correctly by the other two.
+    - **Descriptions and tags** are additive and not edition-specific, so every
+      trusted answer contributes.
     """
     values = list(answers.values())
+    title = _best_title([a['title'] for a in values if a.get('title')])
+    # Exact after normalising, not merely similar: 0.95 similarity is precisely
+    # what a sequel scores against the book it follows.
+    same_book = [a for a in values if matching.norm(a.get('title')) == matching.norm(title)]
 
-    # Longest-wins is right for subtitles and wrong for adaptations: "On Liberty
-    # (Squashed Edition)" is longer than "On Liberty", so a plain max() picks the
-    # abridgement over the real book even when another source got it right.
-    # Prefer titles that are not derived works, and only fall back if every
-    # source offered one.
-    titles = [a['title'] for a in values if a.get('title')]
-    genuine = [t for t in titles if not matching.looks_derived(t)]
     return {
-        'title': max(genuine or titles, key=len, default=''),
-        'tags': tags.clean(_ranked_tags(values))[:MAX_MERGED_TAGS],
+        'title': title,
+        'tags': tags.clean(_ranked_tags(values), author)[:MAX_MERGED_TAGS],
         'description': max((a.get('description') or '' for a in values), key=len, default=''),
-        'series': next((a['series'] for a in values if a.get('series')), None),
-        'sidx': next((a['sidx'] for a in values if a.get('sidx')), None),
-        'publisher': next((a['publisher'] for a in values if a.get('publisher')), ''),
-        'isbn': next((a['isbn'] for a in values if a.get('isbn')), ''),
+        'series': next((a['series'] for a in same_book if a.get('series')), None),
+        'sidx': next((a['sidx'] for a in same_book if a.get('sidx')), None),
+        'publisher': next((a['publisher'] for a in same_book if a.get('publisher')), ''),
+        'isbn': next((a['isbn'] for a in same_book if a.get('isbn')), ''),
     }
 
 
@@ -218,15 +276,28 @@ def compute_gains(merged: dict[str, Any], current: dict[str, Any], conf: str) ->
     Never returns a value that would blank an existing field.
     """
     gains: dict[str, Any] = {}
+    # LOW means no source cleared both signals: not one of them identified the
+    # book. Under --include-low it may still contribute a subject list, which is
+    # additive and easy to eyeball, but not an identifier. An ISBN or publisher
+    # landing in an empty field is exactly the value you will later trust.
+    identified = conf != 'LOW'
+
     if merged['tags'] and not current.get('tags'):
         gains['tags'] = merged['tags']
-    if merged['series'] and not current.get('series'):
+    if identified and merged['series'] and not current.get('series'):
         gains['series'] = merged['series']
-    if merged['description'] and len(merged['description']) > len(current.get('description') or ''):
-        gains['description'] = merged['description']
-    if merged['isbn'] and not current.get('isbn'):
+    if merged['description']:
+        # Filling an empty description is always safe. Replacing one is not:
+        # "longer" is not "better", and this is the only non-title path that can
+        # destroy existing content, so it needs the same confidence the title does.
+        existing = current.get('description') or ''
+        if not existing:
+            gains['description'] = merged['description']
+        elif conf == 'HIGH' and len(merged['description']) > len(existing):
+            gains['description'] = merged['description']
+    if identified and merged['isbn'] and not current.get('isbn'):
         gains['isbn'] = merged['isbn']
-    if merged['publisher'] and not current.get('publisher'):
+    if identified and merged['publisher'] and not current.get('publisher'):
         gains['publisher'] = merged['publisher']
     if (
         conf == 'HIGH'
@@ -263,6 +334,11 @@ def propose(book: Book) -> Proposal | None:
     ``None`` means no source answered, which is a normal outcome and not a failure.
     """
     facts = book.facts()
+    # A stem with no " - " parses as all author and no title, so every title
+    # score would be 0.0 against an empty string and any answer at all would
+    # look equally (un)related. There is nothing to score against, so do not ask.
+    if not facts.query:
+        return None
     answers = query_sources(facts.query, facts.author)
     if not answers:
         return None
@@ -280,7 +356,7 @@ def propose(book: Book) -> Proposal | None:
     # that were there all along. Propose nothing instead.
     current = calibre.read_book_metadata(book.any_path)
     unreadable = current is None
-    merged = merge(surviving)
+    merged = merge(surviving, facts.author)
 
     return Proposal(
         stem=book.stem,
@@ -291,7 +367,7 @@ def propose(book: Book) -> Proposal | None:
         merged=merged,
         fn_score=round(title_score, 3),
         au_score=round(author_score, 3),
-        src_titles={name: a['title'] for name, a in surviving.items()},
+        src_titles={name: a.get('title', '') for name, a in surviving.items()},
         current=current or {},
         unreadable=unreadable,
     )

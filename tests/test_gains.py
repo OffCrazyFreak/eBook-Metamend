@@ -154,8 +154,16 @@ class TestBuildWriteArgs:
             'isbn': 'I',
         }
         args = build_write_args(gains, merge({}))
-        for flag in ('-t', '--tags', '-c', '--publisher', '--isbn'):
-            assert flag in args
+        # Paired, not merely present. Checking only that each flag appears would
+        # pass with two values swapped, which is how a description reaches -t.
+        pairs = dict(zip(args[::2], args[1::2], strict=True))
+        assert pairs == {
+            '-t': 'T',
+            '--tags': 'a,b',
+            '-c': 'D',
+            '--publisher': 'P',
+            '--isbn': 'I',
+        }
 
 
 class TestUnreadableMetadata:
@@ -286,7 +294,7 @@ class TestFieldsComeFromTheSourcesThatEarnedConfidence:
         from ebook_metamend.matching import ADAPTATION_SCORE
 
         scores = self._scores(('google', 'Atomic Habits (Tamil)', ADAPTATION_SCORE, 1.0))
-        assert trusted_names(scores) == ['google'], 'sole source is still reported'
+        assert trusted_names(scores) == [], 'a lone adaptation supplies nothing at all'
 
         with_real = self._scores(
             ('kobo', 'Atomic Habits', 1.0, 1.0),

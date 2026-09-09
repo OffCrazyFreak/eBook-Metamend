@@ -11,14 +11,25 @@ from typing import Any
 from .errors import SourceError
 
 SEARCH_URL = 'https://openlibrary.org/search.json'
-USER_AGENT = 'ebook-metamend/1.0 (personal library)'
+#: Open Library's published policy: a request identifying the application and
+#: a contact gets 3 requests per second, an anonymous one gets 1. The project
+#: URL is the contact, so nothing personal ships in a public repository.
+USER_AGENT = 'eBook-Metamend/1.0 (+https://github.com/OffCrazyFreak/eBook-Metamend)'
 #: Only what is actually read below. first_publish_year was requested and
 #: never used.
-FIELDS = 'title,author_name,subject,publisher,isbn'
+#: Deliberately no isbn or publisher. search.json answers at *work* level, so
+#: those lists hold every edition ever published, unordered, and taking [0] wrote
+#: an arbitrary edition's identifier: for a well-known novel that can be the
+#: Italian paperback. The catalogue is still useful for titles and subjects.
+FIELDS = 'title,author_name,subject'
 
-TIMEOUT = 25
-ATTEMPTS = 3
-RETRY_PAUSE = 3
+#: Short on purpose. When this host is reachable it answers in about two
+#: seconds; when it is not, it fails its TLS handshake and a long timeout just
+#: buys silence at full price. Failing fast and retrying is strictly better than
+#: waiting once for a long time.
+TIMEOUT = 5
+ATTEMPTS = 2
+RETRY_PAUSE = 1
 #: Subjects come back long and unranked, so only the head is useful.
 MAX_SUBJECTS = 25
 
@@ -27,8 +38,9 @@ def fetch_openlibrary(title: str, author: str) -> dict[str, Any] | None:
     """Top hit for a title/author pair, shaped like a parsed OPF record.
 
     Returns the same keys as ``opf.parse`` so every source is interchangeable
-    downstream. Open Library's search has no descriptions and no series, so those
-    are always empty rather than absent.
+    downstream. Descriptions, series, publisher and ISBN are always empty rather
+    than absent: the first two are not in this API, the last two are, but only at
+    work level, which makes them wrong more often than right.
     """
     query = urllib.parse.urlencode(
         {'title': title, 'author': author, 'fields': FIELDS, 'limit': '1'}
@@ -42,7 +54,10 @@ def fetch_openlibrary(title: str, author: str) -> dict[str, Any] | None:
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
                 payload = json.load(response)
                 break
-        except Exception as exc:
+        # OSError covers URLError, socket timeouts and TLS errors; ValueError
+        # covers a truncated or non-JSON body. A bare Exception here would
+        # also swallow a programming mistake into three retries with sleeps.
+        except (OSError, ValueError) as exc:
             last_error = exc
             # No point pausing after the last attempt; it only delays the caller.
             if attempt < ATTEMPTS - 1:
@@ -64,10 +79,10 @@ def fetch_openlibrary(title: str, author: str) -> dict[str, Any] | None:
     return {
         'title': doc.get('title', ''),
         'authors': doc.get('author_name') or [],
-        'publisher': (doc.get('publisher') or [''])[0],
+        'publisher': '',
         'description': '',
         'tags': (doc.get('subject') or [])[:MAX_SUBJECTS],
         'series': None,
         'sidx': None,
-        'isbn': (doc.get('isbn') or [''])[0],
+        'isbn': '',
     }

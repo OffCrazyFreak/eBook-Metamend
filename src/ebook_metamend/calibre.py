@@ -25,7 +25,13 @@ from .config import CAL_ROOT, EBOOK_META, FETCH_METADATA, calibre_env
 
 #: ebook-meta splits --tags on commas, so a tag containing one is silently torn
 #: into several. Library of Congress headings look like "Angelou, Maya, 1928-2014",
-#: which is exactly the shape that breaks. Semicolons are not split.
+#: which is exactly the shape that breaks.
+#:
+#: Changing the separator does not help and has already been tried: Calibre
+#: splits on commas at every entry point (--tags with a comma, with a semicolon,
+#: with a backslash escape, and --from-opf), so a comma simply cannot be stored
+#: in a tag. The workaround is tags.reformat_name_heading, which rewrites the
+#: heading into a form that does not contain one.
 TAG_SEPARATOR = ','
 
 #: Pause between source retries. Kept as the original fixed value for now;
@@ -42,7 +48,7 @@ CONTAINER = 'META-INF/container.xml'
 _CONTAINER_NS = '{urn:oasis:names:tc:opendocument:xmlns:container}'
 
 
-def _read_limited(archive: zipfile.ZipFile, name: str) -> bytes:
+def read_limited(archive: zipfile.ZipFile, name: str) -> bytes:
     """Read a member, refusing one that expands beyond MAX_METADATA_BYTES."""
     info = archive.getinfo(name)
     if info.file_size > MAX_METADATA_BYTES:
@@ -63,7 +69,7 @@ def opf_name(archive: zipfile.ZipFile) -> str | None:
     container is missing or unreadable.
     """
     try:
-        container = ET.fromstring(_read_limited(archive, CONTAINER).decode('utf8', 'ignore'))
+        container = ET.fromstring(read_limited(archive, CONTAINER).decode('utf8', 'ignore'))
         rootfile = container.find(f'.//{_CONTAINER_NS}rootfile')
         declared = rootfile is not None and rootfile.get('full-path')
         if declared and declared in archive.namelist():
@@ -142,7 +148,7 @@ def read_epub_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[s
             name = opf_name(z)
             if name is None:
                 return None
-            root = ET.fromstring(_read_limited(z, name).decode('utf8', 'ignore'))
+            root = ET.fromstring(read_limited(z, name).decode('utf8', 'ignore'))
     except (OSError, KeyError, ValueError, StopIteration, zipfile.BadZipFile, ET.ParseError):
         return None
     return opf.parse_root(root, bare_isbn_fallback=bare_isbn_fallback)

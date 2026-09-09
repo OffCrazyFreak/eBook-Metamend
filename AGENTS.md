@@ -104,8 +104,11 @@ Do not treat these as bugs to fix mid-task. They are the backlog.
 - PDFs still need a Calibre subprocess to read. EPUBs go through `calibre.read_book_metadata`, which reads the zip directly.
 - Calibre splits subjects on commas at every entry point (`--tags`, `--from-opf`, all of them), so a tag containing a comma cannot be stored. `tags.reformat_name_heading` works around it for name headings only.
 - The hallucination filter runs after the scores are computed, so a reported `fn`/`au` can describe a different source set than the one that was merged.
-- Open Library is unreliable in practice (HTTP 500s, connection resets, TLS timeouts). It now reports failures instead of swallowing them, but it still answers rarely.
+- Open Library has never answered on this machine: the TLS handshake to `openlibrary.org` times out most attempts while the rest of the same infrastructure responds instantly. It reports its failures and is shelved after a few in a row, so it costs a few seconds rather than a few minutes, but in practice this is a two-source tool here.
+- Fixtures record each source's *parsed* record, not the raw OPF, so a change to `opf.py` cannot be validated by replay. Wrapping `calibre.fetch_metadata` instead would fix it.
+- `tools/snapshot.py` deliberately re-implements OPF resolution rather than importing `calibre.opf_name`. It is the safety net for `--apply`, so it must not inherit a bug from the code it checks.
 - `matching.norm` strips everything outside `[a-z0-9 ]`, so a Cyrillic, Greek or CJK title normalises to an empty string and scores 0.0. Those books can never reach HIGH.
+- `TITLE_IMPROVEMENT_MARGIN` exists in both `enrich.py` and `epub_to_pdf.py` with the same value. They are not merged on purpose: one governs an online title against an embedded one, the other an EPUB's title against its PDF twin, and they can reasonably diverge.
 
 ## Commit message
 

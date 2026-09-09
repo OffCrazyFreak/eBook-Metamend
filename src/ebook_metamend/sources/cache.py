@@ -22,6 +22,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .errors import SourceError
+
 MODE = os.environ.get('METAMEND_CACHE_MODE', '')
 FIXTURES = Path(os.environ.get('METAMEND_FIXTURES', 'fixtures'))
 
@@ -44,23 +46,42 @@ def wrap(source: str, fetch: Callable[[str, str], Any]) -> Callable[[str, str], 
     if MODE not in ('record', 'replay'):
         return fetch
 
-    def cached(title: str, author: str) -> Any:
-        path = fixture_path(source, title, author)
-        if path.exists():
-            with path.open(encoding='utf8') as fh:
-                return json.load(fh)['response']
-        if MODE == 'replay':
-            raise MissingFixture(f'{source} / {title!r} / {author!r} -> {path.name}')
-
-        response = fetch(title, author)
+    def save(path: Path, title: str, author: str, record: dict[str, Any]) -> None:
         FIXTURES.mkdir(parents=True, exist_ok=True)
         with path.open('w', encoding='utf8') as fh:
             json.dump(
-                {'source': source, 'title': title, 'author': author, 'response': response},
+                {'source': source, 'title': title, 'author': author, **record},
                 fh,
                 indent=1,
                 ensure_ascii=False,
             )
+
+    def cached(title: str, author: str) -> Any:
+        path = fixture_path(source, title, author)
+        if path.exists():
+            with path.open(encoding='utf8') as fh:
+                record = json.load(fh)
+            # A failure is part of what happened and has to replay as one.
+            # Recording only successes meant a run where a source was unreachable
+            # could not be replayed at all: the key was never written, so replay
+            # raised MissingFixture and went back to the network.
+            #
+            # Only in replay, though. A failure is by definition transient, so in
+            # record mode a stored one must be retried and overwritten, or the
+            # first bad minute would be frozen into the fixtures for good.
+            if 'error' not in record:
+                return record['response']
+            if MODE == 'replay':
+                raise SourceError(record['error'])
+        elif MODE == 'replay':
+            raise MissingFixture(f'{source} / {title!r} / {author!r} -> {path.name}')
+
+        try:
+            response = fetch(title, author)
+        except SourceError as exc:
+            save(path, title, author, {'error': str(exc)})
+            raise
+        save(path, title, author, {'response': response})
         return response
 
     return cached
