@@ -67,7 +67,18 @@ export function useRun(options: { perBookMs?: number; loadingMs?: number } = {})
     setState(INITIAL)
   }, [])
 
+  // Keeps every verdict already reached; the rest are marked skipped.
+  const stop = useCallback(() => {
+    simulation.current?.cancel()
+    setState((prev) => ({
+      ...prev,
+      phase: 'done',
+      active: null,
+      books: prev.books.map((b) => (b.status === 'done' ? b : { ...b, status: 'skipped' })),
+    }))
+  }, [])
+
   useEffect(() => () => simulation.current?.cancel(), [])
 
-  return { state, start, reset }
+  return { state, start, reset, stop }
 }

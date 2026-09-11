@@ -64,7 +64,8 @@ export interface FilenameFacts {
   series_index: string | null
 }
 
-export type BookStatus = 'pending' | 'querying' | 'done'
+// skipped: the visitor stopped the run before this book was checked.
+export type BookStatus = 'pending' | 'querying' | 'done' | 'skipped'
 
 export interface BookResult {
   stem: string

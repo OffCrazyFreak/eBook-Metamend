@@ -5,7 +5,13 @@ import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/r
 import mark from '../../assets/brand/icon/icon-square-512.png'
 import wordmark from '../../assets/brand/wordmark/wordmark-white-on-transparent-800w.png'
 import { Sketches } from '@/components/sketches'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { canWriteInPlace, hasFiles, namesFromDrop, namesFromFileList } from '@/intake'
 import { useRun } from '@/mock/use-run'
 import {
@@ -30,7 +36,7 @@ const VERDICT_LABEL: Record<Verdict, string> = {
 const EASE = [0.2, 0.8, 0.2, 1] as const
 
 export function App() {
-  const { state, start, reset } = useRun()
+  const { state, start, reset, stop } = useRun()
   const [selected, setSelected] = useState<BookResult | null>(null)
   const [origin, setOrigin] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'writes'>('all')
@@ -74,15 +80,36 @@ export function App() {
     transition.finished.finally(() => setOrigin(null))
   }, [morph])
 
+  const [excluded, setExcluded] = useState<Set<string>>(() => new Set())
   const counts = useMemo(() => {
     const done = state.books.filter((b) => b.status === 'done')
+    const writes = done.filter(willWrite)
     return {
       done: done.length,
       total: state.books.length,
       high: done.filter((b) => verdict(b) === 'HIGH').length,
-      writes: done.filter(willWrite).length,
+      writes: writes.length,
+      picked: writes.filter((b) => !excluded.has(b.stem)).length,
     }
-  }, [state.books])
+  }, [state.books, excluded])
+  const toggle = useCallback((stem: string) => {
+    setExcluded((prev) => {
+      const next = new Set(prev)
+      if (next.has(stem)) next.delete(stem)
+      else next.add(stem)
+      return next
+    })
+  }, [])
+  const toggleAll = useCallback(
+    (include: boolean) => {
+      setExcluded(include ? new Set() : new Set(state.books.filter(willWrite).map((b) => b.stem)))
+    },
+    [state.books],
+  )
+  const restart = useCallback(() => {
+    setExcluded(new Set())
+    reset()
+  }, [reset])
 
   const visible = filter === 'writes' ? state.books.filter(willWrite) : state.books
   const wide = useMediaQuery('(min-width: 768px)')
@@ -118,9 +145,17 @@ export function App() {
                 active={state.active}
                 origin={selected === null ? origin : null}
                 flash={flash}
+                excluded={excluded}
+                onToggle={toggle}
+                onToggleAll={toggleAll}
                 onSelect={open}
               />
-              <Actions counts={counts} done={state.phase === 'done'} onReset={reset} />
+              <Actions
+                counts={counts}
+                done={state.phase === 'done'}
+                onReset={restart}
+                onStop={stop}
+              />
             </>
           )}
 
@@ -273,6 +308,8 @@ function LockupSpace() {
 
 function Intake({ onStart }: { onStart: (names: string[]) => void }) {
   const [over, setOver] = useState(false)
+  // Where the crosshair sits, as a fraction of the zone; centre when idle.
+  const [aim, setAim] = useState({ x: 0.5, y: 0.5 })
   const fileInput = useRef<HTMLInputElement>(null)
   const folderInput = useRef<HTMLInputElement>(null)
   const reduced = useReducedMotion()
@@ -280,7 +317,16 @@ function Intake({ onStart }: { onStart: (names: string[]) => void }) {
   async function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault()
     setOver(false)
+    setAim({ x: 0.5, y: 0.5 })
     onStart(await namesFromDrop(event))
+  }
+
+  function track(event: DragEvent<HTMLDivElement>) {
+    const r = event.currentTarget.getBoundingClientRect()
+    setAim({
+      x: Math.min(1, Math.max(0, (event.clientX - r.left) / r.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - r.top) / r.height)),
+    })
   }
 
   return (
@@ -296,19 +342,24 @@ function Intake({ onStart }: { onStart: (names: string[]) => void }) {
         <div
           role="region"
           aria-label="Drop EPUB or PDF files or a folder here"
-          className="bp-panel bp-target flex min-h-[9.5rem] flex-col items-center justify-center gap-3 px-4 py-5 text-center sm:gap-4 sm:px-5 sm:py-6 md:min-h-[13rem]"
+          className="bp-panel bp-target relative flex min-h-[9.5rem] flex-col items-center justify-center gap-3 overflow-hidden px-4 py-5 text-center sm:gap-4 sm:px-5 sm:py-6 md:min-h-[13rem]"
           onDragEnter={(e) => hasFiles(e) && setOver(true)}
           onDragOver={(e) => {
             if (hasFiles(e)) {
               e.preventDefault()
               setOver(true)
+              track(e)
             }
           }}
           onDragLeave={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false)
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+              setOver(false)
+              setAim({ x: 0.5, y: 0.5 })
+            }
           }}
           onDrop={onDrop}
         >
+          <Crosshair aim={aim} live={over} />
           <span className="bp-dim w-28 self-start">intake</span>
           <p className="bp-display text-base sm:text-lg md:text-xl">
             {over ? 'Release to start the dry run' : 'Drop files or a folder here'}
@@ -354,6 +405,36 @@ function Intake({ onStart }: { onStart: (names: string[]) => void }) {
 
 // The mark draws itself in as the runtime downloads: the book's outline follows
 // the progress, and the wrench drops in when it reaches the end.
+// Hairlines across the whole zone follow the pointer while files are dragged
+// over it; at rest only a faint ring marks the centre.
+function Crosshair({ aim, live }: { aim: { x: number; y: number }; live: boolean }) {
+  const reduced = useReducedMotion()
+  const follow =
+    live || reduced ? { duration: 0 } : { type: 'spring' as const, stiffness: 220, damping: 26 }
+  const left = `${aim.x * 100}%`
+  const top = `${aim.y * 100}%`
+  return (
+    <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+      <motion.div
+        className="bp-aim-line absolute inset-x-0 h-px"
+        animate={{ top, opacity: live ? 1 : 0 }}
+        transition={follow}
+      />
+      <motion.div
+        className="bp-aim-line absolute inset-y-0 w-px"
+        animate={{ left, opacity: live ? 1 : 0 }}
+        transition={follow}
+      />
+      <motion.div
+        className="bp-aim-ring absolute h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        data-live={live}
+        animate={{ left, top }}
+        transition={follow}
+      />
+    </div>
+  )
+}
+
 function Loading({ progress, label }: { progress: number; label: string }) {
   const reduced = useReducedMotion()
   const done = progress >= 1
@@ -512,6 +593,9 @@ function Results({
   active,
   origin,
   flash,
+  excluded,
+  onToggle,
+  onToggleAll,
   onSelect,
 }: {
   books: BookResult[]
@@ -521,12 +605,25 @@ function Results({
   origin: string | null
   // The row a segment click jumped to; it flashes its rule once.
   flash: string | null
+  // Books the visitor unticked; every book that would be written starts ticked.
+  excluded: Set<string>
+  onToggle: (stem: string) => void
+  onToggleAll: (include: boolean) => void
   onSelect: (b: BookResult) => void
 }) {
   const reduced = useReducedMotion()
+  const writable = books.filter(willWrite)
+  const picked = writable.filter((b) => !excluded.has(b.stem)).length
   return (
     <ol className="bp-panel mt-6 px-4 pt-3 [--row-inset:1rem] md:px-6 md:[--row-inset:1.5rem]">
-      <li className="bp-mono grid grid-cols-[2.5rem_1fr_auto] items-center gap-4 pb-3 text-xs tracking-wider text-[var(--bp-muted)] uppercase md:grid-cols-[2.5rem_1fr_10rem_7rem_8rem]">
+      <li className="bp-mono grid grid-cols-[1.25rem_2.5rem_1fr_auto] items-center gap-4 pb-3 text-xs tracking-wider text-[var(--bp-muted)] uppercase md:grid-cols-[1.25rem_2.5rem_1fr_10rem_7rem_8rem]">
+        <Tick
+          label="Include every book that would be written"
+          checked={writable.length > 0 && picked === writable.length}
+          indeterminate={picked > 0 && picked < writable.length}
+          disabled={writable.length === 0}
+          onChange={(on) => onToggleAll(on)}
+        />
         <span>no.</span>
         <span>file</span>
         <span className="hidden md:block">sources</span>
@@ -554,72 +651,89 @@ function Results({
               animate={{ clipPath: 'inset(0 0% 0 0)' }}
               transition={{ duration: 0.3, ease: EASE }}
             >
-              <button
-                disabled={!done}
-                onClick={() => onSelect(book)}
-                style={origin === book.stem ? { viewTransitionName: 'detail' } : undefined}
-                className="bp-row-button grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-3 text-left focus-visible:outline-none disabled:cursor-default md:grid-cols-[2.5rem_1fr_10rem_7rem_8rem]"
-              >
-                <span className="bp-mono text-xs text-[var(--bp-muted)]">
-                  {String(i + 1).padStart(2, '0')}
-                </span>
-                <span className="min-w-0">
-                  <span className="bp-row-title block truncate">{book.facts.title}</span>
-                  <span className="block truncate text-sm text-[var(--bp-muted)]">
-                    {book.facts.author}
-                    {book.facts.series && ` · ${book.facts.series} ${book.facts.series_index}`}
-                    <span className="bp-mono">
-                      {' '}
-                      · {book.files.map((f) => f.slice(1)).join(' + ')}
-                    </span>
+              <div className="grid grid-cols-[1.25rem_1fr] items-center gap-4">
+                {willWrite(book) ? (
+                  <Tick
+                    label={`Include ${book.facts.title} in the download`}
+                    checked={!excluded.has(book.stem)}
+                    onChange={() => onToggle(book.stem)}
+                  />
+                ) : (
+                  <span />
+                )}
+                <button
+                  disabled={!done}
+                  onClick={() => onSelect(book)}
+                  style={origin === book.stem ? { viewTransitionName: 'detail' } : undefined}
+                  className="bp-row-button grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-3 text-left focus-visible:outline-none disabled:cursor-default md:grid-cols-[2.5rem_1fr_10rem_7rem_8rem]"
+                >
+                  <span className="bp-mono text-xs text-[var(--bp-muted)]">
+                    {String(i + 1).padStart(2, '0')}
                   </span>
-                  {done && book.proposal && (
-                    <span className="bp-mono block truncate text-xs text-[var(--bp-muted)] md:hidden">
-                      gains: {Object.keys(book.proposal.gains).join(', ') || 'none'}
+                  <span className="min-w-0">
+                    <span className="bp-row-title block truncate">{book.facts.title}</span>
+                    <span className="block truncate text-sm text-[var(--bp-muted)]">
+                      {book.facts.author}
+                      {book.facts.series && ` · ${book.facts.series} ${book.facts.series_index}`}
+                      <span className="bp-mono">
+                        {' '}
+                        · {book.files.map((f) => f.slice(1)).join(' + ')}
+                      </span>
                     </span>
-                  )}
-                </span>
-                <span className="bp-mono hidden text-xs text-[var(--bp-muted)] md:block">
-                  {(done ? (book.proposal?.sources ?? []) : (book.answered ?? [])).map(
-                    (s, n, all) => (
+                    {done && book.proposal && (
+                      <span className="bp-mono block truncate text-xs text-[var(--bp-muted)] md:hidden">
+                        gains: {Object.keys(book.proposal.gains).join(', ') || 'none'}
+                      </span>
+                    )}
+                  </span>
+                  <span className="bp-mono hidden text-xs text-[var(--bp-muted)] md:block">
+                    {(done ? (book.proposal?.sources ?? []) : (book.answered ?? [])).map(
+                      (s, n, all) => (
+                        <motion.span
+                          key={s}
+                          className="inline-block"
+                          initial={
+                            reduced || done ? false : { opacity: 0, x: -8, color: '#35c6ff' }
+                          }
+                          animate={{ opacity: 1, x: 0, color: '#a7b6d9' }}
+                          transition={{ duration: 0.5, ease: EASE, color: { duration: 0.9 } }}
+                        >
+                          {SOURCE_LABEL[s].split(' ')[0]}
+                          {n < all.length - 1 ? ',\u00a0' : ''}
+                        </motion.span>
+                      ),
+                    )}
+                  </span>
+                  <span className="bp-mono hidden text-xs text-[var(--bp-muted)] md:block">
+                    {done && book.proposal
+                      ? Object.keys(book.proposal.gains).join(', ') || 'none'
+                      : ''}
+                  </span>
+                  <span className="text-right">
+                    {done ? (
                       <motion.span
-                        key={s}
-                        className="inline-block"
-                        initial={reduced || done ? false : { opacity: 0, x: -8, color: '#35c6ff' }}
-                        animate={{ opacity: 1, x: 0, color: '#a7b6d9' }}
-                        transition={{ duration: 0.5, ease: EASE, color: { duration: 0.9 } }}
+                        className="bp-stamp"
+                        data-verdict={v}
+                        initial={reduced ? false : { scale: 1.6, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ type: 'spring', stiffness: 420, damping: 22, delay: 0.25 }}
                       >
-                        {SOURCE_LABEL[s].split(' ')[0]}
-                        {n < all.length - 1 ? ',\u00a0' : ''}
+                        {VERDICT_LABEL[v]}
                       </motion.span>
-                    ),
-                  )}
-                </span>
-                <span className="bp-mono hidden text-xs text-[var(--bp-muted)] md:block">
-                  {done && book.proposal
-                    ? Object.keys(book.proposal.gains).join(', ') || 'none'
-                    : ''}
-                </span>
-                <span className="text-right">
-                  {done ? (
-                    <motion.span
-                      className="bp-stamp"
-                      data-verdict={v}
-                      initial={reduced ? false : { scale: 1.6, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      transition={{ type: 'spring', stiffness: 420, damping: 22, delay: 0.25 }}
-                    >
-                      {VERDICT_LABEL[v]}
-                    </motion.span>
-                  ) : (
-                    <span
-                      className={`bp-mono text-xs text-[var(--bp-muted)] ${active === book.stem ? 'bp-cursor' : ''}`}
-                    >
-                      {active === book.stem ? 'asking' : 'queued'}
-                    </span>
-                  )}
-                </span>
-              </button>
+                    ) : (
+                      <span
+                        className={`bp-mono text-xs text-[var(--bp-muted)] ${active === book.stem ? 'bp-cursor' : ''}`}
+                      >
+                        {book.status === 'skipped'
+                          ? 'skipped'
+                          : active === book.stem
+                            ? 'asking'
+                            : 'queued'}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </div>
             </motion.li>
           )
         })}
@@ -628,32 +742,81 @@ function Results({
   )
 }
 
+// A drafted checkbox: a square that fills cyan and gets a two-stroke tick.
+function Tick({
+  label,
+  checked,
+  indeterminate = false,
+  disabled = false,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  indeterminate?: boolean
+  disabled?: boolean
+  onChange: (checked: boolean) => void
+}) {
+  const box = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (box.current) box.current.indeterminate = indeterminate
+  }, [indeterminate])
+  return (
+    <label className="bp-tick" data-disabled={disabled || undefined}>
+      <input
+        ref={box}
+        type="checkbox"
+        className="sr-only"
+        aria-label={label}
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="bp-tick-box" aria-hidden="true">
+        <svg viewBox="0 0 16 16" className="bp-tick-mark">
+          <path d="M 3.5 8.5 L 6.5 11.5 L 12.5 4.5" pathLength={1} />
+        </svg>
+        <span className="bp-tick-dash" />
+      </span>
+    </label>
+  )
+}
+
 function Actions({
   counts,
   done,
   onReset,
+  onStop,
 }: {
-  counts: { writes: number }
+  counts: { writes: number; picked: number }
   done: boolean
   onReset: () => void
+  onStop: () => void
 }) {
+  const subset = counts.picked < counts.writes
   return (
     <section className="mt-8 grid gap-3 border-t border-[var(--bp-line-strong)] pt-6 md:flex md:flex-wrap md:items-center">
       <button
         className="bp-button w-full md:w-auto"
         data-primary="true"
-        disabled={!done || counts.writes === 0}
+        disabled={!done || counts.picked === 0}
       >
-        Download {counts.writes} repaired {counts.writes === 1 ? 'file' : 'files'}
+        Download {counts.picked}
+        {subset && ` of ${counts.writes}`} repaired {counts.writes === 1 ? 'file' : 'files'}
       </button>
       {canWriteInPlace && (
-        <button className="bp-button w-full md:w-auto" disabled={!done || counts.writes === 0}>
-          Write into the folder
+        <button className="bp-button w-full md:w-auto" disabled={!done || counts.picked === 0}>
+          Write {subset ? `${counts.picked} ` : ''}into the folder
         </button>
       )}
-      <button className="bp-button w-full md:ml-auto md:w-auto" onClick={onReset}>
-        Start over
-      </button>
+      {done ? (
+        <button className="bp-button w-full md:ml-auto md:w-auto" onClick={onReset}>
+          Start over
+        </button>
+      ) : (
+        <button className="bp-button w-full md:ml-auto md:w-auto" onClick={onStop}>
+          Stop
+        </button>
+      )}
       <p className="bp-mono w-full text-xs text-[var(--bp-muted)]">
         Dry run by default. Only HIGH verdicts are written, only missing fields are filled, and no
         existing value is ever blanked.{' '}
@@ -683,10 +846,14 @@ function Detail({
         overlayStyle={
           morph ? { viewTransitionName: 'detail-overlay', animation: 'none' } : undefined
         }
+        showCloseButton={false}
         className="max-h-[90vh] max-w-2xl overflow-y-auto border-[var(--bp-line-strong)] bg-[var(--bp-deep)] p-0 text-[var(--bp-ink)] sm:max-w-2xl"
       >
         {book && (
           <div className="p-6 md:p-8">
+            <DialogClose className="bp-mono bp-link absolute top-5 right-5 text-xs text-[var(--bp-muted)] md:top-7 md:right-7">
+              [ close ]
+            </DialogClose>
             <span className="bp-dim w-48">sheet detail</span>
             <DialogTitle className="bp-display mt-4 text-2xl leading-tight text-[var(--bp-ink)]">
               {book.facts.title}
