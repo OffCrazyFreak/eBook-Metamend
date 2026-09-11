@@ -15,6 +15,16 @@ import {
 import { canWriteInPlace, hasFiles, namesFromDrop, namesFromFileList } from '@/intake'
 import { useRun } from '@/mock/use-run'
 import {
+  DEFAULT_SELECTION,
+  PRESET_LABEL,
+  isSelected,
+  matchingPreset,
+  preset,
+  toggled,
+  type Preset,
+  type Selection,
+} from '@/selection'
+import {
   SOURCE_LABEL,
   verdict,
   willWrite,
@@ -39,7 +49,6 @@ export function App() {
   const { state, start, reset, stop } = useRun()
   const [selected, setSelected] = useState<BookResult | null>(null)
   const [origin, setOrigin] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | 'writes'>('all')
   const reduced = useReducedMotion()
   const morph = !reduced && typeof document.startViewTransition === 'function'
 
@@ -60,7 +69,6 @@ export function App() {
   const [flash, setFlash] = useState<string | null>(null)
   const jump = useCallback(
     (stem: string) => {
-      setFilter('all')
       setFlash(stem)
       requestAnimationFrame(() => {
         document
@@ -80,7 +88,7 @@ export function App() {
     transition.finished.finally(() => setOrigin(null))
   }, [morph])
 
-  const [excluded, setExcluded] = useState<Set<string>>(() => new Set())
+  const [selection, setSelection] = useState<Selection>(DEFAULT_SELECTION)
   const counts = useMemo(() => {
     const done = state.books.filter((b) => b.status === 'done')
     const writes = done.filter(willWrite)
@@ -89,29 +97,29 @@ export function App() {
       total: state.books.length,
       high: done.filter((b) => verdict(b) === 'HIGH').length,
       writes: writes.length,
-      picked: writes.filter((b) => !excluded.has(b.stem)).length,
+      // Files the download would hold, and whether every repairable one is in.
+      picked: writes.filter((b) => isSelected(selection, b)).length,
+      allWrites: writes.every((b) => isSelected(selection, b)),
     }
-  }, [state.books, excluded])
-  const toggle = useCallback((stem: string) => {
-    setExcluded((prev) => {
-      const next = new Set(prev)
-      if (next.has(stem)) next.delete(stem)
-      else next.add(stem)
-      return next
-    })
-  }, [])
-  const toggleAll = useCallback(
-    (include: boolean) => {
-      setExcluded(include ? new Set() : new Set(state.books.filter(willWrite).map((b) => b.stem)))
-    },
+  }, [state.books, selection])
+  const toggle = useCallback((book: BookResult) => setSelection((s) => toggled(s, book)), [])
+  const choose = useCallback(
+    (name: Preset) => setSelection(preset(name, state.books)),
     [state.books],
   )
   const restart = useCallback(() => {
-    setExcluded(new Set())
+    setSelection(DEFAULT_SELECTION)
     reset()
   }, [reset])
 
-  const visible = filter === 'writes' ? state.books.filter(willWrite) : state.books
+  // A visitor parked on another tab can read the count off the title.
+  useEffect(() => {
+    document.title =
+      state.phase === 'running'
+        ? `${counts.done} of ${counts.total} \u00b7 eBook Metamend`
+        : 'eBook Metamend'
+  }, [state.phase, counts.done, counts.total])
+
   const wide = useMediaQuery('(min-width: 768px)')
   const scrolled = useScrolledPast(140)
   // The hero owns the lockup until it scrolls away or the run replaces the hero;
@@ -123,7 +131,11 @@ export function App() {
     <div className="bp-sheet">
       <Sketches />
       <LayoutGroup>
-        <Header showLockup={!heroHasLockup} scrolled={scrolled} />
+        <Header
+          showLockup={!heroHasLockup}
+          scrolled={scrolled}
+          progress={state.phase === 'running' && scrolled ? counts : null}
+        />
         <div className="mx-auto max-w-6xl px-4 pb-8 sm:px-6 md:px-10">
           {state.phase === 'idle' && <Hero onStart={start} showLockup={heroHasLockup} />}
           {state.phase === 'loading' && (
@@ -136,18 +148,18 @@ export function App() {
                 counts={counts}
                 phase={state.phase}
                 elapsedMs={state.elapsedMs}
-                filter={filter}
-                onFilter={setFilter}
+                pressed={matchingPreset(selection, state.books)}
+                onPreset={choose}
                 onJump={jump}
               />
               <Results
-                books={visible}
+                books={state.books}
                 active={state.active}
                 origin={selected === null ? origin : null}
                 flash={flash}
-                excluded={excluded}
+                selection={selection}
                 onToggle={toggle}
-                onToggleAll={toggleAll}
+                onToggleAll={(on) => choose(on ? 'all' : 'none')}
                 onSelect={open}
               />
               <Actions
@@ -192,13 +204,36 @@ function useScrolledPast(offset: number) {
 
 // Sticky, and it catches the lockup from the hero as the page scrolls: the same
 // layoutId on both ends makes Motion fly the mark and name up into the bar.
-function Header({ showLockup, scrolled }: { showLockup: boolean; scrolled: boolean }) {
+function Header({
+  showLockup,
+  scrolled,
+  progress,
+}: {
+  showLockup: boolean
+  scrolled: boolean
+  // Shown while a run is live and its summary has scrolled out of view.
+  progress: { done: number; total: number } | null
+}) {
   return (
     <header className="bp-bar sticky top-0 z-40" data-scrolled={scrolled}>
       <div className="mx-auto flex h-12 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 md:h-14 md:px-10">
-        <a href="#top" className="flex h-full items-center">
-          {showLockup ? <Lockup size="bar" /> : <span aria-hidden="true" />}
-        </a>
+        <div className="flex h-full items-center gap-4">
+          <a href="#top" className="flex h-full items-center">
+            {showLockup ? <Lockup size="bar" /> : <span aria-hidden="true" />}
+          </a>
+          <AnimatePresence>
+            {progress && (
+              <motion.span
+                className="bp-mono text-xs text-[var(--bp-muted)]"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <span className="text-[var(--bp-cyan)]">{progress.done}</span> of {progress.total}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
         <nav className="bp-mono flex gap-4 text-[11px] tracking-wider uppercase sm:gap-6 md:text-xs">
           <a className="bp-link" href="#how-it-decides">
             How it decides
@@ -501,16 +536,16 @@ function Summary({
   counts,
   phase,
   elapsedMs,
-  filter,
-  onFilter,
+  pressed,
+  onPreset,
   onJump,
 }: {
   books: BookResult[]
   counts: { done: number; total: number; high: number; writes: number }
   phase: 'running' | 'done'
   elapsedMs: number
-  filter: 'all' | 'writes'
-  onFilter: (f: 'all' | 'writes') => void
+  pressed: Preset | null
+  onPreset: (name: Preset) => void
   onJump: (stem: string) => void
 }) {
   const [hover, setHover] = useState<number | null>(null)
@@ -534,15 +569,20 @@ function Summary({
             .
           </p>
         </div>
-        <div className="bp-mono flex gap-1 text-xs" role="group" aria-label="Filter">
-          {(['all', 'writes'] as const).map((f) => (
+        <div
+          className="bp-mono flex flex-wrap items-center gap-1 text-xs"
+          role="group"
+          aria-label="Select books"
+        >
+          <span className="mr-2 text-[var(--bp-muted)]">select</span>
+          {(['all', 'writes', 'high', 'none'] as const).map((name) => (
             <button
-              key={f}
-              aria-pressed={filter === f}
-              onClick={() => onFilter(f)}
+              key={name}
+              aria-pressed={pressed === name}
+              onClick={() => onPreset(name)}
               className="border border-[var(--bp-line-strong)] px-3 py-1.5 tracking-wider uppercase aria-pressed:bg-[var(--bp-cyan)] aria-pressed:text-[var(--bp-deep)]"
             >
-              {f === 'all' ? 'all books' : 'would write'}
+              {PRESET_LABEL[name]}
             </button>
           ))}
         </div>
@@ -593,7 +633,7 @@ function Results({
   active,
   origin,
   flash,
-  excluded,
+  selection,
   onToggle,
   onToggleAll,
   onSelect,
@@ -605,23 +645,22 @@ function Results({
   origin: string | null
   // The row a segment click jumped to; it flashes its rule once.
   flash: string | null
-  // Books the visitor unticked; every book that would be written starts ticked.
-  excluded: Set<string>
-  onToggle: (stem: string) => void
+  selection: Selection
+  onToggle: (book: BookResult) => void
   onToggleAll: (include: boolean) => void
   onSelect: (b: BookResult) => void
 }) {
   const reduced = useReducedMotion()
-  const writable = books.filter(willWrite)
-  const picked = writable.filter((b) => !excluded.has(b.stem)).length
+  const checked = books.filter((b) => b.status === 'done')
+  const picked = checked.filter((b) => isSelected(selection, b)).length
   return (
     <ol className="bp-panel mt-6 px-4 pt-3 [--row-inset:1rem] md:px-6 md:[--row-inset:1.5rem]">
       <li className="bp-mono grid grid-cols-[1.25rem_2.5rem_1fr_auto] items-center gap-4 pb-3 text-xs tracking-wider text-[var(--bp-muted)] uppercase md:grid-cols-[1.25rem_2.5rem_1fr_10rem_7rem_8rem]">
         <Tick
-          label="Include every book that would be written"
-          checked={writable.length > 0 && picked === writable.length}
-          indeterminate={picked > 0 && picked < writable.length}
-          disabled={writable.length === 0}
+          label="Select every checked book"
+          checked={checked.length > 0 && picked === checked.length}
+          indeterminate={picked > 0 && picked < checked.length}
+          disabled={checked.length === 0}
           onChange={(on) => onToggleAll(on)}
         />
         <span>no.</span>
@@ -630,11 +669,6 @@ function Results({
         <span className="hidden md:block">gains</span>
         <span className="text-right">verdict</span>
       </li>
-      {books.length === 0 && (
-        <li className="bp-row bp-mono py-4 text-xs text-[var(--bp-muted)]">
-          Nothing would be written. No book reached HIGH with a field to add.
-        </li>
-      )}
       <AnimatePresence initial={false}>
         {books.map((book, i) => {
           const v = verdict(book)
@@ -652,11 +686,11 @@ function Results({
               transition={{ duration: 0.3, ease: EASE }}
             >
               <div className="grid grid-cols-[1.25rem_1fr] items-center gap-4">
-                {willWrite(book) ? (
+                {done ? (
                   <Tick
-                    label={`Include ${book.facts.title} in the download`}
-                    checked={!excluded.has(book.stem)}
-                    onChange={() => onToggle(book.stem)}
+                    label={`Select ${book.facts.title}`}
+                    checked={isSelected(selection, book)}
+                    onChange={() => onToggle(book)}
                   />
                 ) : (
                   <span />
@@ -787,12 +821,12 @@ function Actions({
   onReset,
   onStop,
 }: {
-  counts: { writes: number; picked: number }
+  counts: { picked: number; allWrites: boolean }
   done: boolean
   onReset: () => void
   onStop: () => void
 }) {
-  const subset = counts.picked < counts.writes
+  const some = counts.allWrites ? '' : ' selected'
   return (
     <section className="mt-8 grid gap-3 border-t border-[var(--bp-line-strong)] pt-6 md:flex md:flex-wrap md:items-center">
       <button
@@ -800,12 +834,11 @@ function Actions({
         data-primary="true"
         disabled={!done || counts.picked === 0}
       >
-        Download {counts.picked}
-        {subset && ` of ${counts.writes}`} repaired {counts.writes === 1 ? 'file' : 'files'}
+        Download{some}
       </button>
       {canWriteInPlace && (
         <button className="bp-button w-full md:w-auto" disabled={!done || counts.picked === 0}>
-          Write {subset ? `${counts.picked} ` : ''}into the folder
+          Write{some} into the folder
         </button>
       )}
       {done ? (
@@ -935,6 +968,11 @@ function Detail({
                     </div>
                   ))}
                 </dl>
+                {willWrite(book) && (
+                  <button className="bp-button mt-8" data-primary="true">
+                    Download this file
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -976,6 +1014,17 @@ function Explainer() {
           <p>
             Fields are added or improved, never emptied. Dry run is the default. And the files never
             leave your browser: the Python that does this work runs inside the page.
+          </p>
+          <p className="text-[var(--bp-muted)]">
+            The desktop tool also asks Kobo and Google Books, which cannot be reached from a
+            browser. See the{' '}
+            <a
+              className="bp-link underline underline-offset-4"
+              href="https://github.com/OffCrazyFreak/eBook-Metamend#readme"
+            >
+              README
+            </a>
+            .
           </p>
         </div>
         <Agreement />
