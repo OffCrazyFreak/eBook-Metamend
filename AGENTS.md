@@ -60,7 +60,7 @@ Ask first, and **ask means ask**, not quietly pick the smaller option:
 - `cli.py`: argument parsing and printing only. Library code returns, `cli.py` prints.
 - `tools/`: `snapshot.py` (the safety net for `--apply`) and `strip.py` (builds a test corpus). `snapshot.py` re-implements OPF resolution on purpose and must not import it from the package.
 - `tests/`: the safety model at its thresholds, the gain rules, sources, and one end-to-end replay.
-- `web/`: the browser build. Same package running under Pyodide (Phase 2), static files only, deployed to GitHub Pages. Until a variation is chosen, `web/variations/` holds the five candidates.
+- `web/`: the browser build. Same package running under Pyodide (Phase 2), static files only, deployed to GitHub Pages. `src/App.tsx` is the page, `src/styles/blueprint.css` its look, `src/mock/` the invented sample it plays until the worker exists.
 
 Duplication that can silently drift is a bug: the confidence classifier once existed in four copies and the validation suite scored a stale one.
 
@@ -86,7 +86,7 @@ pnpm dev                          # dev server; open a page in the T3 preview
 pnpm typecheck && pnpm format:check && pnpm build   # the definition of done for web/
 ```
 
-During the design round each `variations/<name>/` is an independent page sharing only `src/mock`, `src/types.ts` and `src/intake.ts`. No real book names in mock data.
+No real book names in mock data.
 
 ## Conventions
 
