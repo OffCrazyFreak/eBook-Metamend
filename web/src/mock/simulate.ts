@@ -3,7 +3,7 @@
 
 import type { BookResult, RunEvent } from '@/types'
 
-import { MOCK_BOOKS } from './books'
+import { MOCK_BOOKS, parseStem } from './books'
 
 const LOADING_STEPS = [
   'Fetching the Python runtime',
@@ -89,6 +89,7 @@ export function fromFileNames(names: string[]): BookResult[] {
     stems.set(stem, {
       ...template,
       stem,
+      facts: parseStem(stem),
       files: [ext],
       status: 'pending',
       proposal: template.proposal ? { ...template.proposal, stem } : null,

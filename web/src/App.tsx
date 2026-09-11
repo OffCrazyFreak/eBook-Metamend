@@ -12,7 +12,13 @@ import {
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { canWriteInPlace, hasFiles, namesFromDrop, namesFromFileList } from '@/intake'
+import {
+  canWriteInPlace,
+  hasFiles,
+  namesFromDrop,
+  namesFromFileList,
+  type Intake as IntakeResult,
+} from '@/intake'
 import { useRun } from '@/mock/use-run'
 import {
   DEFAULT_SELECTION,
@@ -107,8 +113,29 @@ export function App() {
     (name: Preset) => setSelection(preset(name, state.books)),
     [state.books],
   )
+  const [others, setOthers] = useState(0)
+  const [notice, setNotice] = useState<string | null>(null)
+  // The sample plays when nothing was handed over; a handful of non-ebooks is
+  // not nothing, so that case gets a line instead of a run.
+  const begin = useCallback(
+    (intake: IntakeResult) => {
+      if (intake.books.length === 0 && intake.others > 0) {
+        setNotice(
+          intake.others === 1
+            ? 'That file is not an EPUB or a PDF.'
+            : `None of those ${intake.others} files are EPUB or PDF.`,
+        )
+        return
+      }
+      setNotice(null)
+      setOthers(intake.others)
+      start(intake.books)
+    },
+    [start],
+  )
   const restart = useCallback(() => {
     setSelection(DEFAULT_SELECTION)
+    setOthers(0)
     reset()
   }, [reset])
 
@@ -137,7 +164,9 @@ export function App() {
           progress={state.phase === 'running' && scrolled ? counts : null}
         />
         <div className="mx-auto max-w-6xl px-4 pb-8 sm:px-6 md:px-10">
-          {state.phase === 'idle' && <Hero onStart={start} showLockup={heroHasLockup} />}
+          {state.phase === 'idle' && (
+            <Hero onStart={begin} notice={notice} showLockup={heroHasLockup} />
+          )}
           {state.phase === 'loading' && (
             <Loading progress={state.loading.progress} label={state.loading.label} />
           )}
@@ -148,6 +177,7 @@ export function App() {
                 counts={counts}
                 phase={state.phase}
                 elapsedMs={state.elapsedMs}
+                others={others}
                 pressed={matchingPreset(selection, state.books)}
                 onPreset={choose}
                 onJump={jump}
@@ -253,9 +283,11 @@ function Header({
 // the remaining third.
 function Hero({
   onStart,
+  notice,
   showLockup,
 }: {
-  onStart: (names: string[]) => void
+  onStart: (intake: IntakeResult) => void
+  notice: string | null
   showLockup: boolean
 }) {
   const reduced = useReducedMotion()
@@ -291,7 +323,7 @@ function Hero({
         </div>
       </div>
 
-      <Intake onStart={onStart} />
+      <Intake onStart={onStart} notice={notice} />
     </section>
   )
 }
@@ -341,8 +373,48 @@ function LockupSpace() {
   return <div className="h-40 w-40" aria-hidden="true" />
 }
 
-function Intake({ onStart }: { onStart: (names: string[]) => void }) {
+function Intake({
+  onStart,
+  notice,
+}: {
+  onStart: (intake: IntakeResult) => void
+  notice: string | null
+}) {
   const [over, setOver] = useState(false)
+  // Files dragged anywhere over the page light the panel up and land here.
+  const [pageOver, setPageOver] = useState(false)
+  useEffect(() => {
+    let depth = 0
+    const enter = (e: globalThis.DragEvent) => {
+      if (!hasFiles(e)) return
+      depth += 1
+      setPageOver(true)
+    }
+    const leave = () => {
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) setPageOver(false)
+    }
+    const over = (e: globalThis.DragEvent) => {
+      if (hasFiles(e)) e.preventDefault()
+    }
+    const drop = async (e: globalThis.DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      depth = 0
+      setPageOver(false)
+      onStart(await namesFromDrop(e))
+    }
+    window.addEventListener('dragenter', enter)
+    window.addEventListener('dragleave', leave)
+    window.addEventListener('dragover', over)
+    window.addEventListener('drop', drop)
+    return () => {
+      window.removeEventListener('dragenter', enter)
+      window.removeEventListener('dragleave', leave)
+      window.removeEventListener('dragover', over)
+      window.removeEventListener('drop', drop)
+    }
+  }, [onStart])
   // Where the crosshair sits, as a fraction of the zone; centre when idle.
   const [aim, setAim] = useState({ x: 0.5, y: 0.5 })
   const fileInput = useRef<HTMLInputElement>(null)
@@ -351,7 +423,10 @@ function Intake({ onStart }: { onStart: (names: string[]) => void }) {
 
   async function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault()
+    // The page-wide listener would otherwise start the same run twice.
+    event.stopPropagation()
     setOver(false)
+    setPageOver(false)
     setAim({ x: 0.5, y: 0.5 })
     onStart(await namesFromDrop(event))
   }
@@ -368,7 +443,7 @@ function Intake({ onStart }: { onStart: (names: string[]) => void }) {
     <div>
       <motion.div
         className="bp-brackets"
-        data-over={over}
+        data-over={over || pageOver}
         initial={reduced ? false : { opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5, delay: 0.3 }}
@@ -397,7 +472,7 @@ function Intake({ onStart }: { onStart: (names: string[]) => void }) {
           <Crosshair aim={aim} live={over} />
           <span className="bp-dim w-28 self-start">intake</span>
           <p className="bp-display text-base sm:text-lg md:text-xl">
-            {over ? 'Release to start the dry run' : 'Drop files or a folder here'}
+            {over || pageOver ? 'Release to start the dry run' : 'Drop files or a folder here'}
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             <button className="bp-button" onClick={() => fileInput.current?.click()}>
@@ -428,9 +503,17 @@ function Intake({ onStart }: { onStart: (names: string[]) => void }) {
           />
         </div>
       </motion.div>
+      {notice && (
+        <p className="bp-mono mt-3 text-xs text-[var(--bp-cyan)]" role="status">
+          {notice}
+        </p>
+      )}
       <p className="bp-mono mt-3 text-[11px] tracking-wider text-[var(--bp-muted)] uppercase sm:mt-4">
         No files to hand?{' '}
-        <button className="bp-link underline underline-offset-4" onClick={() => onStart([])}>
+        <button
+          className="bp-link underline underline-offset-4"
+          onClick={() => onStart({ books: [], others: 0 })}
+        >
           Play the invented sample
         </button>
       </p>
@@ -536,6 +619,7 @@ function Summary({
   counts,
   phase,
   elapsedMs,
+  others,
   pressed,
   onPreset,
   onJump,
@@ -544,6 +628,7 @@ function Summary({
   counts: { done: number; total: number; high: number; writes: number }
   phase: 'running' | 'done'
   elapsedMs: number
+  others: number
   pressed: Preset | null
   onPreset: (name: Preset) => void
   onJump: (stem: string) => void
@@ -568,6 +653,12 @@ function Summary({
             )}
             .
           </p>
+          {others > 0 && (
+            <p className="bp-mono mt-2 text-xs text-[var(--bp-muted)]">
+              {others} {others === 1 ? 'file was' : 'files were'} not EPUB or PDF and{' '}
+              {others === 1 ? 'was' : 'were'} left alone.
+            </p>
+          )}
         </div>
         <div
           className="bp-mono flex flex-wrap items-center gap-1 text-xs"
@@ -690,6 +781,7 @@ function Results({
                   <Tick
                     label={`Select ${book.facts.title}`}
                     checked={isSelected(selection, book)}
+                    idle={!willWrite(book)}
                     onChange={() => onToggle(book)}
                   />
                 ) : (
@@ -782,12 +874,15 @@ function Tick({
   checked,
   indeterminate = false,
   disabled = false,
+  idle = false,
   onChange,
 }: {
   label: string
   checked: boolean
   indeterminate?: boolean
   disabled?: boolean
+  // Nothing to write for this book: the box is dimmed but still works.
+  idle?: boolean
   onChange: (checked: boolean) => void
 }) {
   const box = useRef<HTMLInputElement>(null)
@@ -795,7 +890,7 @@ function Tick({
     if (box.current) box.current.indeterminate = indeterminate
   }, [indeterminate])
   return (
-    <label className="bp-tick" data-disabled={disabled || undefined}>
+    <label className="bp-tick" data-disabled={disabled || undefined} data-idle={idle || undefined}>
       <input
         ref={box}
         type="checkbox"

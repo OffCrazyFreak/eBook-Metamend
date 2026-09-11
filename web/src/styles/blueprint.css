@@ -379,6 +379,9 @@ g:focus-visible > .bp-node-dim {
   cursor: default;
   opacity: 0.35;
 }
+.bp-tick[data-idle='true'] {
+  opacity: 0.5;
+}
 .bp-tick-box {
   position: relative;
   display: block;
