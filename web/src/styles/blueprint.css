@@ -195,7 +195,6 @@ html {
 }
 .bp-stamp[data-verdict='HIGH'] {
   color: var(--bp-cyan);
-  border-width: 2px;
 }
 .bp-stamp[data-verdict='MED'] {
   color: var(--bp-steel);

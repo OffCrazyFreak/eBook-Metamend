@@ -407,14 +407,15 @@ function Hero({
             className="bp-display max-w-2xl text-[1.45rem] leading-[1.14] font-semibold text-balance sm:text-2xl md:text-3xl lg:mt-7 lg:text-[2.6rem] lg:leading-[1.1]"
             {...rise(0.1)}
           >
-            Repair the metadata in your ebooks without letting a catalogue lie to you.
+            Repair ebook metadata, safely.
           </motion.h1>
           <motion.p
             className="mt-2.5 max-w-xl text-sm text-[var(--bp-muted)] sm:mt-3 md:text-base lg:mt-4"
             {...rise(0.2)}
           >
             Your filenames are the ground truth. Three catalogues are asked about each book, and a
-            field is written only when two of them identify the same book on their own and agree.
+            field is written only when two of them identify the same book on their own and agree. No
+            catalogue gets to lie to you.
           </motion.p>
         </div>
       </div>
@@ -1339,6 +1340,13 @@ function Detail({
                 <h3 className="bp-dim mt-8 w-full">
                   {Object.keys(p.gains).length ? 'would be written' : 'nothing to add'}
                 </h3>
+                {Object.keys(p.gains).length > 0 && (
+                  <p className="bp-mono mt-3 text-xs text-[var(--bp-muted)]">
+                    {book.files.length === 2
+                      ? 'Written to both the EPUB and the PDF.'
+                      : `Written to the ${book.files[0].slice(1).toUpperCase()}, the only file for this book.`}
+                  </p>
+                )}
                 <dl className="mt-3 grid gap-3">
                   {Object.entries(p.gains).map(([field, value]) => (
                     <div key={field} className="grid gap-1 md:grid-cols-[7rem_1fr]">
