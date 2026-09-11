@@ -102,14 +102,6 @@ export class Client {
     )
   }
 
-  async bundle(files: Record<string, ArrayBuffer>): Promise<ArrayBuffer> {
-    const reply = await this.request<Extract<Reply, { type: 'bundled' }>>(
-      (id) => ({ type: 'bundle', id, files }),
-      Object.values(files),
-    )
-    return reply.zip
-  }
-
   terminate() {
     this.worker.terminate()
   }

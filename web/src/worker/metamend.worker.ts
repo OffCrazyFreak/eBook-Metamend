@@ -67,9 +67,6 @@ def propose(stem, js_files, on_answer):
 
 def apply(stem, js_files, proposal):
     return web.apply(stem, _bytes(js_files), ${JSON.stringify(LIBRARY)}, proposal.to_py())
-
-def bundle(js_files):
-    return web.bundle(_bytes(js_files))
 `)
   web = py.globals.get('web') as PyProxy
   web.install_transport(fetchSync)
@@ -140,15 +137,6 @@ scope.onmessage = async (event: MessageEvent<ToWorker>) => {
         result.destroy()
         const [files, buffers] = toBytes(plain.files)
         post({ type: 'applied', id: message.id, files, writes: plain.writes }, buffers)
-        return
-      }
-      case 'bundle': {
-        const fn = py.globals.get('bundle')
-        const result = fn(views(message.files))
-        fn.destroy()
-        const zip = (result.toJs() as Uint8Array).buffer as ArrayBuffer
-        result.destroy()
-        post({ type: 'bundled', id: message.id, zip }, [zip])
         return
       }
     }

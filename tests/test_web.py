@@ -163,17 +163,6 @@ class TestPacing:
         assert web.pause_after() == 3
 
 
-class TestBundle:
-    def test_every_file_lands_under_its_own_path(self, tmp_path):
-        import io
-        import zipfile
-
-        data = web.bundle({'a/x.epub': b'one', 'y.pdf': b'two'})
-        with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            assert sorted(archive.namelist()) == ['a/x.epub', 'y.pdf']
-            assert archive.read('a/x.epub') == b'one'
-
-
 class TestTransport:
     def test_the_worker_function_is_wrapped_and_the_agent_dropped(self):
         seen = {}

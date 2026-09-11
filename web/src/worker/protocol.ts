@@ -17,7 +17,6 @@ export type ToWorker =
   | { type: 'reset' }
   | { type: 'propose'; id: number; stem: string; files: FileBytes }
   | { type: 'apply'; id: number; stem: string; files: FileBytes; proposal: Proposal }
-  | { type: 'bundle'; id: number; files: Record<string, ArrayBuffer> }
 
 export type FromWorker =
   | { type: 'loading'; progress: number; label: string }
@@ -36,5 +35,4 @@ export type FromWorker =
       unavailable: SourceName[]
     }
   | { type: 'applied'; id: number; files: FileBytes; writes: WriteOutcome[] }
-  | { type: 'bundled'; id: number; zip: ArrayBuffer }
   | { type: 'error'; id: number; message: string }
