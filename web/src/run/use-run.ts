@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { groupBooks, type Intake, type IntakeBook } from '@/intake'
 import { parseStem } from '@/mock/books'
 import { applyEvent, simulateRun, type Simulation } from '@/mock/simulate'
-import type { BookResult, Extension, RunEvent } from '@/types'
+import type { BookResult, Extension, RunEvent, SourceName } from '@/types'
 import type { FileBytes } from '@/worker/protocol'
 
 import { Client } from './client'
@@ -21,6 +21,8 @@ export interface RunState {
   active: string | null
   // The invented sample plays without files, so nothing can be written or downloaded.
   sample: boolean
+  // Catalogues the worker shelved after repeated failures during this run.
+  unavailable: SourceName[]
 }
 
 const INITIAL: RunState = {
@@ -31,6 +33,7 @@ const INITIAL: RunState = {
   elapsedMs: 0,
   active: null,
   sample: false,
+  unavailable: [],
 }
 
 export type Outcome = 'written' | 'downloaded'
@@ -55,6 +58,9 @@ export function useRun(options: { failLoad?: boolean } = {}) {
   const folders = useRef<FileSystemDirectoryHandle[]>([])
   // Bumped on every start, stop and reset so a stale run's events are dropped.
   const token = useRef(0)
+  // The book the live run is asking about; a worker answer for any other stem
+  // belongs to a request that was stopped and is dropped.
+  const querying = useRef<string | null>(null)
   const readyAt = useRef(0)
 
   const handle = useCallback((event: RunEvent) => {
@@ -83,18 +89,17 @@ export function useRun(options: { failLoad?: boolean } = {}) {
     })
   }, [])
 
-  const runtime = useCallback(
-    (mine: number) => {
-      if (client.current) return client.current
-      client.current = new Client((event) => {
-        if (token.current !== mine) return
-        if (event.type === 'ready') return
-        handle(event)
-      })
-      return client.current
-    },
-    [handle],
-  )
+  // One worker for the page's whole life; its callback reads the live run's
+  // state through refs rather than closing over the run that created it.
+  const runtime = useCallback(() => {
+    if (client.current) return client.current
+    client.current = new Client((event) => {
+      if (event.type === 'ready') return
+      if (event.type === 'answer' && event.stem !== querying.current) return
+      handle(event)
+    })
+    return client.current
+  }, [handle])
 
   const lastIntake = useRef<Intake | null>(null)
   const start = useCallback(
@@ -113,7 +118,7 @@ export function useRun(options: { failLoad?: boolean } = {}) {
         proposal: null,
       }))
       setState({ ...INITIAL, phase: 'loading', books: rows })
-      const py = runtime(mine)
+      const py = runtime()
       try {
         await py.ready()
       } catch {
@@ -121,23 +126,29 @@ export function useRun(options: { failLoad?: boolean } = {}) {
         return
       }
       if (token.current !== mine) return
+      py.reset()
       handle({ type: 'ready', books: rows })
       for (const row of rows) {
         if (token.current !== mine) return
         const book = intake.current.get(row.stem)!
+        querying.current = row.stem
         handle({ type: 'querying', stem: row.stem })
         let result: BookResult
         let pause = 0
+        let unavailable: SourceName[] = []
         try {
           const reply = await py.propose(row.stem, await bytesOf(book))
           pause = reply.pause
+          unavailable = reply.unavailable
           result = { ...row, facts: reply.facts, status: 'done', proposal: reply.proposal }
         } catch (error) {
           // One book failing to be read or scored must not end the run.
           result = { ...row, status: 'done', proposal: unreadable(row, describe(error)) }
         }
         if (token.current !== mine) return
+        querying.current = null
         handle({ type: 'book', result })
+        if (unavailable.length) setState((prev) => ({ ...prev, unavailable }))
         if (pause > 0 && row !== rows[rows.length - 1]) await sleep(pause * 1000)
       }
       if (token.current !== mine) return
@@ -181,6 +192,7 @@ export function useRun(options: { failLoad?: boolean } = {}) {
   const stop = useCallback(() => {
     simulation.current?.cancel()
     ++token.current
+    querying.current = null
     setState((prev) => ({
       ...prev,
       phase: 'done',
@@ -273,7 +285,11 @@ async function bytesOf(book: IntakeBook): Promise<FileBytes> {
     Extension,
     IntakeBook['files']['.epub'],
   ][]) {
-    if (f) out[ext] = await f.file.arrayBuffer()
+    if (!f) continue
+    // A File snapshot goes stale once its file is written; the handle reads
+    // the current bytes, so a book written once can still be read again.
+    const file = f.handle ? await f.handle.getFile() : f.file
+    out[ext] = await file.arrayBuffer()
   }
   return out
 }

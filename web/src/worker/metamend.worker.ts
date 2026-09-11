@@ -3,6 +3,7 @@
 // plain objects; everything back is the same. The worker never sees the DOM.
 
 import { loadPyodide, type PyodideAPI } from 'pyodide'
+import type { PyProxy } from 'pyodide/ffi'
 
 import type { FileBytes, FromWorker, ToWorker } from './protocol'
 
@@ -21,6 +22,26 @@ const post = (message: FromWorker, transfer: Transferable[] = []) =>
   scope.postMessage(message, transfer)
 
 let ready: Promise<PyodideAPI> | null = null
+// The Python module, bound once so no proxy is made per request.
+let web: PyProxy | null = null
+
+// The catalogues are reached with a synchronous request, which a worker may
+// make and the plain blocking Python sources need. A timeout is legal on a
+// synchronous request inside a worker, unlike on the main thread.
+function fetchSync(url: string, headersJson: string, timeout: number): Uint8Array {
+  const request = new XMLHttpRequest()
+  request.open('GET', url, false)
+  request.responseType = 'arraybuffer'
+  request.timeout = Math.round(timeout * 1000)
+  for (const [name, value] of Object.entries(JSON.parse(headersJson) as Record<string, string>)) {
+    request.setRequestHeader(name, value)
+  }
+  request.send()
+  if (request.status < 200 || request.status >= 400) {
+    throw new Error(`HTTP ${request.status || 'error'} for ${url}`)
+  }
+  return new Uint8Array(request.response as ArrayBuffer)
+}
 
 async function boot(base: string): Promise<PyodideAPI> {
   post({ type: 'loading', progress: 0, label: STEPS[0] })
@@ -35,7 +56,6 @@ async function boot(base: string): Promise<PyodideAPI> {
   py.FS.mkdirTree(LIBRARY)
   py.runPython(`
 from ebook_metamend import web
-web.install_transport()
 
 def _bytes(js_files):
     return {ext: bytes(data) for ext, data in js_files.to_py().items()}
@@ -49,19 +69,21 @@ def apply(stem, js_files, proposal):
 def bundle(js_files):
     return web.bundle(_bytes(js_files))
 `)
+  web = py.globals.get('web') as PyProxy
+  web.install_transport(fetchSync)
   post({ type: 'loading', progress: 1, label: 'Ready' })
   return py
 }
 
 const toPlain = { dict_converter: Object.fromEntries }
 
+// toJs already copied each buffer out of the wasm heap; hand those over as is.
 function toBytes(files: Record<string, Uint8Array>): [FileBytes, ArrayBuffer[]] {
   const out: FileBytes = {}
   const buffers: ArrayBuffer[] = []
   for (const [ext, data] of Object.entries(files)) {
-    const copy = new Uint8Array(data).buffer
-    out[ext as keyof FileBytes] = copy
-    buffers.push(copy)
+    out[ext as keyof FileBytes] = data.buffer as ArrayBuffer
+    buffers.push(data.buffer as ArrayBuffer)
   }
   return [out, buffers]
 }
@@ -79,7 +101,11 @@ scope.onmessage = async (event: MessageEvent<ToWorker>) => {
     }
     return
   }
-  if (!ready) {
+  if (message.type === 'reset') {
+    if (ready) (await ready, web?.begin_run())
+    return
+  }
+  if (!ready || !web) {
     post({ type: 'error', id: message.id, message: 'The runtime is not loaded.' })
     return
   }
@@ -94,9 +120,12 @@ scope.onmessage = async (event: MessageEvent<ToWorker>) => {
         fn.destroy()
         const proposal = result === undefined ? null : result.toJs(toPlain)
         result?.destroy?.()
-        const facts = py.globals.get('web').facts(message.stem).toJs(toPlain)
-        const pause: number = py.globals.get('web').pause_after()
-        post({ type: 'proposed', id: message.id, facts, proposal, pause })
+        const factsProxy = web.facts(message.stem)
+        const facts = factsProxy.toJs(toPlain)
+        factsProxy.destroy()
+        const pause: number = web.pause_after()
+        const unavailable = proposal?.unavailable ?? []
+        post({ type: 'proposed', id: message.id, facts, proposal, pause, unavailable })
         return
       }
       case 'apply': {
@@ -113,7 +142,7 @@ scope.onmessage = async (event: MessageEvent<ToWorker>) => {
         const fn = py.globals.get('bundle')
         const result = fn(views(message.files))
         fn.destroy()
-        const zip = new Uint8Array(result.toJs()).buffer
+        const zip = (result.toJs() as Uint8Array).buffer as ArrayBuffer
         result.destroy()
         post({ type: 'bundled', id: message.id, zip }, [zip])
         return

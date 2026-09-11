@@ -41,11 +41,12 @@ export function intakeFromFileList(files: FileList | null): Intake {
 }
 
 // The folder picker on browsers that have it: the handle it returns is what
-// lets repairs go back into the same files.
+// lets repairs go back into the same files. Read access only at this point;
+// the dry run needs nothing more, and write access is asked for on Write.
 export async function intakeFromPicker(): Promise<Intake | null> {
   if (!canWriteInPlace) return null
   try {
-    const folder = await window.showDirectoryPicker({ mode: 'readwrite' })
+    const folder = await window.showDirectoryPicker({ mode: 'read' })
     const files: IntakeFile[] = []
     await walkHandle(folder, `${folder.name}/`, files)
     return sortIntake(files, [folder])

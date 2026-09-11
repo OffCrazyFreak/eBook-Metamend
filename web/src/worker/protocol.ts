@@ -13,6 +13,8 @@ export interface WriteOutcome {
 
 export type ToWorker =
   | { type: 'init'; base: string }
+  // A new run: shelved catalogues and back-off from the last one are forgotten.
+  | { type: 'reset' }
   | { type: 'propose'; id: number; stem: string; files: FileBytes }
   | { type: 'apply'; id: number; stem: string; files: FileBytes; proposal: Proposal }
   | { type: 'bundle'; id: number; files: Record<string, ArrayBuffer> }
@@ -29,6 +31,8 @@ export type FromWorker =
       proposal: Proposal | null
       // Seconds to wait before the next book, so every catalogue keeps its rate.
       pause: number
+      // Catalogues shelved after failing several books in a row.
+      unavailable: SourceName[]
     }
   | { type: 'applied'; id: number; files: FileBytes; writes: WriteOutcome[] }
   | { type: 'bundled'; id: number; zip: ArrayBuffer }

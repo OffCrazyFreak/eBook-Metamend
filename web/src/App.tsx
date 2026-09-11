@@ -39,6 +39,7 @@ import {
   type BookResult,
   type Confidence,
   type Metadata,
+  type SourceName,
 } from '@/types'
 
 type Verdict = Confidence | 'NONE' | 'UNREADABLE'
@@ -122,7 +123,7 @@ export function App() {
       high: done.filter((b) => verdict(b) === 'HIGH').length,
       writes: writes.length,
       // Files the download would hold, and whether every repairable one is in.
-      picked: writes.filter((b) => isSelected(selection, b)).length,
+      picked: writes.filter((b) => isSelected(selection, b) && !outcome.has(b.stem)).length,
       allWrites: writes.every((b) => isSelected(selection, b)),
       written: [...outcome.values()].filter((o) => o === 'written').length,
       downloaded: [...outcome.values()].filter((o) => o === 'downloaded').length,
@@ -176,9 +177,11 @@ export function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [state.phase, state.books, choose])
+  // Books already written or downloaded are done; a second pass would re-apply.
   const pickedBooks = useCallback(
-    () => state.books.filter((b) => willWrite(b) && isSelected(selection, b)),
-    [state.books, selection],
+    () =>
+      state.books.filter((b) => willWrite(b) && isSelected(selection, b) && !outcome.has(b.stem)),
+    [state.books, selection, outcome],
   )
   const [busy, setBusy] = useState(false)
   const place = useCallback(
@@ -188,6 +191,9 @@ export function App() {
         const result = await repair(books, mode)
         setOutcome((prev) => new Map([...prev, ...result.outcomes]))
         setTrouble(result.failures)
+      } catch (error) {
+        // A refused permission or a failed bundle must say so, not look like nothing happened.
+        setTrouble([error instanceof Error ? error.message : String(error)])
       } finally {
         setBusy(false)
       }
@@ -311,6 +317,7 @@ export function App() {
                 busy={busy}
                 canWrite={canWriteInPlace && writable(pickedBooks())}
                 trouble={trouble}
+                unavailable={state.unavailable}
                 onDownload={() => download(pickedBooks())}
                 onWrite={() => setConfirming(true)}
                 onReset={restart}
@@ -1242,6 +1249,7 @@ function Actions({
   busy,
   canWrite,
   trouble,
+  unavailable,
   onDownload,
   onWrite,
   onReset,
@@ -1254,6 +1262,7 @@ function Actions({
   // Every picked file came with a handle the browser can write through.
   canWrite: boolean
   trouble: string[]
+  unavailable: SourceName[]
   onDownload: () => void
   onWrite: () => void
   onReset: () => void
@@ -1293,6 +1302,12 @@ function Actions({
       {trouble.length > 0 && (
         <p className="bp-mono w-full text-xs text-[var(--bp-cyan)]" role="status">
           Not placed: {trouble.join('; ')}
+        </p>
+      )}
+      {unavailable.length > 0 && (
+        <p className="bp-mono w-full text-xs text-[var(--bp-cyan)]" role="status">
+          {unavailable.map((s) => SOURCE_LABEL[s]).join(' and ')} could not be reached and{' '}
+          {unavailable.length === 1 ? 'was' : 'were'} left out for the rest of the run.
         </p>
       )}
       <p className="bp-mono w-full text-xs text-[var(--bp-muted)]">

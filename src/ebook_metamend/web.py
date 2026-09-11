@@ -8,6 +8,7 @@ knows about Pyodide beyond ``install_transport``; the rest runs under pytest.
 from __future__ import annotations
 
 import io
+import json
 import os
 import zipfile
 from collections.abc import Callable
@@ -20,22 +21,31 @@ from .sources import WEB_SOURCE_NAMES, http, select
 WEB_SOURCES = select(WEB_SOURCE_NAMES)
 
 
-def install_transport() -> None:
-    """Route every catalogue call through the browser's XMLHttpRequest.
+def install_transport(fetch: Callable[[str, str, float], Any]) -> None:
+    """Route every catalogue call through a function the worker supplies.
 
-    Synchronous XHR is allowed in a worker, which is what lets the sources stay
-    plain blocking Python. Browsers own the User-Agent header, so it is dropped
-    rather than refused.
+    The worker hands in a synchronous XMLHttpRequest wrapper: (url, headers as
+    JSON, timeout in seconds) to the body's bytes, raising on any failure. The
+    package itself never imports anything from the browser, so the same code
+    runs under pytest with a plain Python function in that seat. Browsers own
+    the User-Agent header, so it is dropped rather than refused.
     """
-    from pyodide.http import pyxhr  # only exists inside Pyodide
 
     def transport(url: str, headers: dict[str, str], timeout: float) -> bytes:
         sent = {k: v for k, v in headers.items() if k.lower() != 'user-agent'}
-        response = pyxhr.get(url, headers=sent)
-        response.raise_for_status()
-        return response.content
+        try:
+            body = fetch(url, json.dumps(sent), timeout)
+        except Exception as exc:  # noqa: BLE001 - the browser's error type is not ours
+            # OSError is what get_json retries and the pacer counts as a miss.
+            raise OSError(str(exc)[:120]) from exc
+        return bytes(body.to_py() if hasattr(body, 'to_py') else body)
 
     http.set_transport(transport)
+
+
+def begin_run() -> None:
+    """Forget the last run's shelved sources and back-off; a page lives long."""
+    enrich.reset_run_state()
 
 
 def _place(stem: str, files: dict[str, bytes], root: str) -> Book:
@@ -54,12 +64,21 @@ def _place(stem: str, files: dict[str, bytes], root: str) -> Book:
     return Book(stem=os.path.basename(stem), formats=formats)
 
 
-def _remove(book: Book) -> None:
+def _remove(book: Book, root: str) -> None:
     for path in book.formats.values():
         try:
             os.unlink(path)
         except OSError:
             pass
+    # The folders were made for this book; an empty one left behind is a leak
+    # in a file system that lives as long as the page.
+    folder = os.path.dirname(next(iter(book.formats.values()), ''))
+    while folder and os.path.abspath(folder) != os.path.abspath(root):
+        try:
+            os.rmdir(folder)
+        except OSError:
+            break
+        folder = os.path.dirname(folder)
 
 
 def facts(stem: str) -> dict[str, Any]:
@@ -89,12 +108,15 @@ def propose(
     try:
         proposal = enrich.propose(book, sources=WEB_SOURCES, pause=False, on_answer=on_answer)
     finally:
-        _remove(book)
+        _remove(book, root)
     if proposal is None:
         return None
     return {
         **proposal.to_dict(),
         'stem': stem,
+        # Catalogues shelved after repeated failures, so the page can say why
+        # a row has fewer witnesses than it should.
+        'unavailable': sorted(enrich.unavailable_sources),
         # Paths inside the worker's file system mean nothing to the page.
         'files': {ext: os.path.basename(path) for ext, path in proposal.files.items()},
         'current': proposal.current,
@@ -116,8 +138,11 @@ def apply(
 ) -> dict[str, Any]:
     """Write a proposal's gains into the files and hand the bytes back.
 
-    Only what ``enrich.apply`` writes on the desktop, through the same writers.
+    Only what ``enrich.apply`` writes on the desktop, through the same writers,
+    and only at HIGH: the page's own gate is not the last word on writing.
     """
+    if proposal.get('conf') != 'HIGH':
+        raise ValueError(f'only HIGH proposals are written, not {proposal.get("conf")!r}')
     book = _place(stem, files, root)
     # The page's copy carries reporting extras; only the serialised fields build a Proposal.
     keys = enrich.Proposal(stem, {}, '', [], {}, {}, 0, 0, {}).to_dict().keys() - {'files'}
@@ -129,7 +154,7 @@ def apply(
             with open(path, 'rb') as fh:
                 written[ext] = fh.read()
     finally:
-        _remove(book)
+        _remove(book, root)
     return {
         'files': written,
         'writes': [{'ext': ext, 'ok': ok, 'reason': reason} for ext, ok, reason in record.writes],

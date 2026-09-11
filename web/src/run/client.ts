@@ -58,6 +58,11 @@ export class Client {
     return this.readyPromise
   }
 
+  // Forget the last run's shelved catalogues and back-off before a new one.
+  reset() {
+    this.send({ type: 'reset' })
+  }
+
   private send(message: ToWorker, transfer: Transferable[] = []) {
     this.worker.postMessage(message, transfer)
   }

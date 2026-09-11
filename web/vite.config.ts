@@ -19,7 +19,14 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
-          src: ['node_modules/pyodide/*', '!**/*.{md,html,map}', '!**/*.d.ts', '!**/package.json'],
+          src: [
+            'node_modules/pyodide/*',
+            '!**/*.{md,html,map}',
+            '!**/*.d.ts',
+            '!**/package.json',
+            // The npm package bundles wheels for its own tests; the site never loads them.
+            '!**/*.whl',
+          ],
           dest: 'pyodide',
           rename: { stripBase: true },
         },

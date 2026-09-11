@@ -11,6 +11,7 @@ import pytest
 
 from ebook_metamend import enrich, web
 from ebook_metamend.sources import http
+from ebook_metamend.sources.errors import SourceError
 from test_writers import make_epub
 
 # One answer per keyless catalogue, all naming the filename's book.
@@ -89,6 +90,7 @@ class TestPropose:
         assert result['unreadable'] is False
         assert {s['name'] for s in result['scores']} == {'apple', 'openlib', 'inventaire'}
         assert heard == ['openlib', 'apple', 'inventaire']
+        assert result['unavailable'] == []
         assert not any(root.rglob('*'))
 
     def test_a_folder_in_the_stem_is_kept_apart(self, tmp_path):
@@ -99,6 +101,8 @@ class TestPropose:
         )
         assert result['stem'] == 'Fiction/Mara Voss - The Quiet Orchard'
         assert result['files'] == {'.epub': 'Mara Voss - The Quiet Orchard.epub'}
+        # The folder made for the book goes with it.
+        assert not (root / 'Fiction').exists()
         # The folder is not part of the author's name.
         assert result['conf'] == 'HIGH'
         assert web.facts('Fiction/Mara Voss - The Quiet Orchard')['author'] == 'Mara Voss'
@@ -140,7 +144,7 @@ class TestApply:
         data = epub_bytes(tmp_path)
         proposal = {
             'stem': 's',
-            'conf': 'LOW',
+            'conf': 'HIGH',
             'sources': [],
             'gains': {},
             'merged': {},
@@ -168,3 +172,36 @@ class TestBundle:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             assert sorted(archive.namelist()) == ['a/x.epub', 'y.pdf']
             assert archive.read('a/x.epub') == b'one'
+
+
+class TestTransport:
+    def test_the_worker_function_is_wrapped_and_the_agent_dropped(self):
+        seen = {}
+
+        def fetch(url, headers_json, timeout):
+            seen['headers'] = json.loads(headers_json)
+            seen['timeout'] = timeout
+            return b'{"ok": true}'
+
+        web.install_transport(fetch)
+        assert http.get_json('https://example.invalid/x', timeout=7) == {'ok': True}
+        assert 'User-Agent' not in seen['headers'] and seen['headers']['Accept']
+        assert seen['timeout'] == 7
+
+    def test_a_browser_error_reads_as_a_source_error(self, monkeypatch):
+        monkeypatch.setattr(http.time, 'sleep', lambda _s: None)
+
+        class JsException(Exception):
+            pass
+
+        def fetch(url, headers_json, timeout):
+            raise JsException('NetworkError: timeout')
+
+        web.install_transport(fetch)
+        with pytest.raises(SourceError, match='OSError'):
+            http.get_json('https://example.invalid/x')
+
+    def test_begin_run_forgets_a_shelved_source(self):
+        enrich.unavailable_sources['openlib'] = 'down'
+        web.begin_run()
+        assert enrich.unavailable_sources == {}
