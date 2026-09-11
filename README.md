@@ -7,7 +7,7 @@
 
 **Repairs the metadata in an ebook library, without letting a metadata source lie to you.**
 
-**Web version:** [offcrazyfreak.github.io/eBook-Metamend](https://offcrazyfreak.github.io/eBook-Metamend/). Runs in the browser; files never leave it. The interface is in place and the Python wiring is next, so until then the page plays an invented sample.
+**Web version:** [offcrazyfreak.github.io/eBook-Metamend](https://offcrazyfreak.github.io/eBook-Metamend/). The same package running in your browser: drop files or a folder, nothing is uploaded, and repairs go back into the folder (Chrome, Edge) or come back as downloads. How it works: [docs/web.md](docs/web.md).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB) ![Dependencies](https://img.shields.io/badge/dependencies-pypdf%20only-2ec50d) [![CI](https://github.com/OffCrazyFreak/eBook-Metamend/actions/workflows/ci.yml/badge.svg)](https://github.com/OffCrazyFreak/eBook-Metamend/actions/workflows/ci.yml)
 
@@ -140,6 +140,8 @@ This is the reason for the whole design. A source that returns a plausible wrong
 
 ## Setup
 
+The web version needs no setup: open the page. The desktop tool asks two more catalogues (Kobo and Google Books, which a browser cannot reach) and runs over a whole library from the command line.
+
 Python 3.10+ with pypdf (installed with the package), and Calibre for the Kobo and Google Books sources. Calibre no longer touches the books themselves. No system install needed:
 
 ```bash
@@ -201,10 +203,11 @@ ebook-convert cleaned.epub out.pdf --paper-size letter
 
 ## Status
 
-Working, and used on a real library of a few hundred books. Packaged as a `src/` layout with tests. Known rough edges, kept honest:
+Working, and used on a real library of a few hundred books. Packaged as a `src/` layout with tests. The web version is live and runs the same package. Known rough edges, kept honest:
 
 - Name headings are still rewritten into a comma-free form (`tags.reformat_name_heading`), a habit from the Calibre days; the native writers store commas fine
 - Open Library times out under rapid queries more often than it should
+- In the web version, a download of many files is zipped in memory; a large batch is better written back in place or downloaded in smaller selections
 
 ## Contributing
 
