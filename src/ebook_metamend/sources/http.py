@@ -56,11 +56,20 @@ def get_json(
     it: a catalogue that is down must not read as "no such book".
     """
     headers = {'User-Agent': USER_AGENT, 'Accept': accept}
+
+    def fetched() -> str:
+        body = _transport(url, headers, timeout).decode('utf8')
+        # Parsed before the raw layer may store it: a body that is not JSON is
+        # a failed attempt to retry, never a fixture to replay.
+        json.loads(body)
+        return body
+
     last_error: Exception | None = None
+    # A replay reads the same file however often it tries; one attempt is enough.
+    attempts = 1 if cache.replaying() else attempts
     for attempt in range(attempts):
         try:
-            body = cache.raw('http', url, lambda: _transport(url, headers, timeout).decode('utf8'))
-            return json.loads(body)
+            return json.loads(cache.raw('http', url, fetched))
         # A replay with no raw body must reach wrap() untouched, or the retry
         # loop would report it as a transport failure.
         except cache.MissingRaw:

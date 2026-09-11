@@ -120,9 +120,12 @@ def wrap(source: str, fetch: Callable[[str, str], Any]) -> Callable[[str, str], 
             # over what the catalogue actually sent. Only when every raw file
             # the recording read is present, or a fetch would touch the network.
             if record.get('raw') and all((FIXTURES / name).exists() for name in record['raw']):
+                # A SourceError here can only come from a stored body the
+                # parser rejects (no network is reached), so the parsed record
+                # is the better answer.
                 try:
                     return fetch(title, author)
-                except MissingRaw:
+                except (MissingRaw, SourceError):
                     pass
             # A failure is part of what happened and has to replay as one.
             # Recording only successes meant a run where a source was unreachable

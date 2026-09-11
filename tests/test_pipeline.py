@@ -403,6 +403,51 @@ class TestTheRawBodyIsRecordedBesideTheParsedRecord:
         finally:
             http.set_transport(None)
 
+    def test_a_body_that_is_not_json_is_retried_not_recorded(self, fixtures, monkeypatch):
+        monkeypatch.setattr(cache, 'MODE', 'record')
+        monkeypatch.setattr(http.time, 'sleep', lambda s: None)
+        bodies = iter([b'<html>503</html>', b'{"docs": [1]}'])
+        http.set_transport(lambda url, headers, timeout: next(bodies))
+        try:
+            assert http.get_json('https://example.test/search') == {'docs': [1]}
+            monkeypatch.setattr(cache, 'MODE', 'replay')
+            http.set_transport(lambda *_: pytest.fail('replay hit the network'))
+            assert http.get_json('https://example.test/search') == {'docs': [1]}
+        finally:
+            http.set_transport(None)
+
+    def test_a_parser_that_asks_a_new_url_falls_back_to_the_parsed_record(
+        self, fixtures, monkeypatch
+    ):
+        monkeypatch.setattr(cache, 'MODE', 'record')
+        http.set_transport(lambda url, headers, timeout: b'{"title": "Dune"}')
+        try:
+            fetch = lambda t, a: http.get_json('https://example.test/v1/' + t)  # noqa: E731
+            assert cache.wrap('openlib', fetch)('Dune', 'Herbert') == {'title': 'Dune'}
+            monkeypatch.setattr(cache, 'MODE', 'replay')
+            http.set_transport(lambda *_: pytest.fail('replay hit the network'))
+            moved = lambda t, a: http.get_json('https://example.test/v2/' + t)  # noqa: E731
+            assert cache.wrap('openlib', moved)('Dune', 'Herbert') == {'title': 'Dune'}
+        finally:
+            http.set_transport(None)
+
+    def test_a_stored_body_the_parser_rejects_falls_back_to_the_parsed_record(
+        self, fixtures, monkeypatch
+    ):
+        monkeypatch.setattr(cache, 'MODE', 'record')
+        http.set_transport(lambda url, headers, timeout: b'{"title": "Dune"}')
+        try:
+            fetch = lambda t, a: http.get_json('https://example.test/' + t)  # noqa: E731
+            cache.wrap('openlib', fetch)('Dune', 'Herbert')
+            raw_file = cache.raw_path('http', 'https://example.test/Dune')
+            raw_file.write_text(json.dumps({'kind': 'http', 'key': 'x', 'body': '<html>'}))
+            monkeypatch.setattr(cache, 'MODE', 'replay')
+            http.set_transport(lambda *_: pytest.fail('replay hit the network'))
+            monkeypatch.setattr(http.time, 'sleep', lambda s: pytest.fail('replay slept'))
+            assert cache.wrap('openlib', fetch)('Dune', 'Herbert') == {'title': 'Dune'}
+        finally:
+            http.set_transport(None)
+
     def test_a_plugin_answer_replays_without_calibre(self, fixtures, monkeypatch):
         monkeypatch.setattr(cache, 'MODE', 'record')
         monkeypatch.setattr(calibre_plugin, 'require_plugin', lambda plugin: None)
