@@ -220,6 +220,7 @@ export function useRun(options: { failLoad?: boolean } = {}) {
         if (!granted) return { outcomes, failures: ['Write access was not granted.'] }
       }
       const chosen = books.filter((b) => b.proposal)
+      let produced = 0
       // One book's bytes at a time: the zip pulls each book as it is written,
       // so nothing is held for the whole selection.
       async function* repaired(): AsyncGenerator<{ name: string; input: ArrayBuffer }> {
@@ -239,6 +240,7 @@ export function useRun(options: { failLoad?: boolean } = {}) {
                 await writable.write(data)
                 await writable.close()
               } else {
+                produced++
                 yield { name: source.path, input: data }
               }
             }
@@ -254,8 +256,9 @@ export function useRun(options: { failLoad?: boolean } = {}) {
       )
       if (mode === 'downloaded' && count > LOOSE_DOWNLOADS) {
         // A Response body becomes a Blob the browser may keep on disk, unlike an ArrayBuffer.
-        const zip = await downloadZip(repaired(), { buffersAreUTF8: true }).blob()
-        download('ebook-metamend-repaired.zip', zip)
+        const zip = await downloadZip(repaired()).blob()
+        // Every book failing leaves a 22-byte empty archive; that is not a repair.
+        if (produced > 0) download('ebook-metamend-repaired.zip', zip)
       } else {
         for await (const { name, input } of repaired()) {
           download(name.slice(name.lastIndexOf('/') + 1), new Blob([input]))
