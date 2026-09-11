@@ -1,6 +1,6 @@
 # Brand assets
 
-One mark: an isometric book with a wrench, drawn in navy. All files are PNG.
+One mark: an isometric book with a wrench, drawn in navy. Images are PNG, plus one ICO favicon and one JSON manifest snippet.
 
 Brand navy is `#001A46` (RGB 0, 26, 70). It is the background of every opaque export and the text colour of every navy-on-transparent one.
 
