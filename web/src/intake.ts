@@ -81,18 +81,26 @@ export async function intakeFromFilePicker(): Promise<Intake | null> {
 }
 
 // A drop yields handles on Chrome and Edge, directory entries everywhere else.
-// The handle calls must be made before the first await: the drag data store
+// Every read of the items happens before the first await: the drag data store
 // is readable only inside the event.
 export async function intakeFromDrop(event: DragEvent | globalThis.DragEvent): Promise<Intake> {
   const transfer = event.dataTransfer
   if (!transfer) return EMPTY
   const items = Array.from(transfer.items).filter((item) => item.kind === 'file')
   if (items.length && 'getAsFileSystemHandle' in DataTransferItem.prototype) {
+    // A handle comes back null for a file with no path behind it (dragged out
+    // of a mail client or another page); the file itself is still there and
+    // can be checked and downloaded, so it is taken without a handle.
+    const plain = items.map((item) => item.getAsFile())
     const handles = await Promise.all(items.map((item) => item.getAsFileSystemHandle()))
     const files: IntakeFile[] = []
     const folders: FileSystemDirectoryHandle[] = []
-    for (const handle of handles) {
-      if (!handle) continue
+    for (const [index, handle] of handles.entries()) {
+      if (!handle) {
+        const file = plain[index]
+        if (file) files.push({ path: file.name, file })
+        continue
+      }
       if (handle.kind === 'directory') {
         const folder = handle as FileSystemDirectoryHandle
         folders.push(folder)
