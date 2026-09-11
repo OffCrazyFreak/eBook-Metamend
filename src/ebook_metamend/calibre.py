@@ -1,11 +1,9 @@
-"""Calibre command line wrappers.
+"""Calibre command line wrappers, plus the zip-level EPUB reader.
 
-Calibre is used rather than a native Python library because ``ebook-meta`` edits
-EPUB and PDF metadata **in place**. Libraries that rebuild the EPUB archive can
-drop the ``mimetype`` entry, reorder the manifest or lose XML namespaces.
-
-Reading is a different matter: spawning a subprocess per book costs about 0.47 s
-against 0.0013 s for reading the OPF out of the zip directly. See ``epub_reader``.
+Calibre is only asked for what nothing else can give: its metadata source
+plugins (Kobo, Google Books) and their plugin list. Reading and writing the
+books themselves is native now, in ``writers``; spawning a subprocess per book
+cost about 0.47 s against 0.0013 s for reading the OPF out of the zip directly.
 """
 
 from __future__ import annotations
@@ -14,25 +12,13 @@ import functools
 import os
 import re
 import subprocess
-import tempfile
 import time
 import zipfile
 from typing import Any
 from xml.etree import ElementTree as ET
 
 from . import opf
-from .config import CAL_ROOT, EBOOK_META, FETCH_METADATA, calibre_env
-
-#: ebook-meta splits --tags on commas, so a tag containing one is silently torn
-#: into several. Library of Congress headings look like "Angelou, Maya, 1928-2014",
-#: which is exactly the shape that breaks.
-#:
-#: Changing the separator does not help and has already been tried: Calibre
-#: splits on commas at every entry point (--tags with a comma, with a semicolon,
-#: with a backslash escape, and --from-opf), so a comma simply cannot be stored
-#: in a tag. The workaround is tags.reformat_name_heading, which rewrites the
-#: heading into a form that does not contain one.
-TAG_SEPARATOR = ','
+from .config import CAL_ROOT, FETCH_METADATA, calibre_env
 
 #: Pause between source retries. Kept as the original fixed value for now;
 #: adaptive backoff is a deliberate later change.
@@ -108,40 +94,10 @@ def installed_metadata_plugins() -> frozenset[str]:
     return frozenset(names)
 
 
-def read_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[str, Any] | None:
-    """Read embedded metadata by asking Calibre to emit an OPF.
-
-    Works for any format Calibre understands. The temp file is removed even if
-    the subprocess times out, which the original in ``2_online_enrich.py`` did
-    not do, orphaning a file in /tmp on every timeout.
-    """
-    with tempfile.NamedTemporaryFile(suffix='.opf', delete=False) as handle:
-        tmp = handle.name
-    try:
-        subprocess.run(
-            [EBOOK_META, path, '--to-opf', tmp],
-            capture_output=True,
-            text=True,
-            timeout=90,
-            env=calibre_env(),
-        )
-        with open(tmp, encoding='utf8', errors='ignore') as fh:
-            xml = fh.read()
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    finally:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-    return opf.parse(xml, bare_isbn_fallback=bare_isbn_fallback)
-
-
 def read_epub_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[str, Any] | None:
     """Read an EPUB's OPF straight out of the zip.
 
-    Roughly 350x faster than ``read_metadata`` because it spawns nothing. Only
-    valid for EPUBs; PDFs still need Calibre.
+    Roughly 350x faster than asking Calibre because it spawns nothing.
     """
     try:
         with zipfile.ZipFile(path) as z:
@@ -152,23 +108,6 @@ def read_epub_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[s
     except (OSError, KeyError, ValueError, StopIteration, zipfile.BadZipFile, ET.ParseError):
         return None
     return opf.parse_root(root, bare_isbn_fallback=bare_isbn_fallback)
-
-
-def write_metadata(path: str, args: list[str], *, timeout: int = 180) -> tuple[bool, str]:
-    """Apply metadata arguments to a book in place.
-
-    Returns (ok, stderr). ``args`` are ebook-meta flags such as ``['-t', title]``.
-    """
-    if not args:
-        return True, ''
-    result = subprocess.run(
-        [EBOOK_META, path, *args],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env=calibre_env(),
-    )
-    return result.returncode == 0, result.stderr
 
 
 def fetch_metadata(
@@ -208,16 +147,15 @@ def fetch_metadata(
 
 
 def read_book_metadata(path: str, *, bare_isbn_fallback: bool = False) -> dict[str, Any] | None:
-    """Read a book's embedded metadata by the best available route.
+    """Read a book's embedded metadata without spawning anything.
 
-    EPUBs are read straight from the zip: measured at 299x faster than spawning
-    Calibre, and more faithful. Calibre's ``--to-opf`` normalises on the way out,
-    which loses ISBNs recorded as a bare ``opf:scheme="ISBN"`` value, drops the
-    series index, and splits tags on commas before you ever see them.
-
-    Anything else still goes through Calibre, which is the only thing that reads
-    a PDF.
+    EPUBs are read straight from the zip, PDFs through pypdf. Both are more
+    faithful than Calibre's ``--to-opf`` was: that normalised on the way out,
+    dropping the series index and splitting tags on commas before you ever saw
+    them.
     """
     if path.lower().endswith('.epub'):
         return read_epub_metadata(path, bare_isbn_fallback=bare_isbn_fallback)
-    return read_metadata(path, bare_isbn_fallback=bare_isbn_fallback)
+    from .writers import pdf
+
+    return pdf.read(path)

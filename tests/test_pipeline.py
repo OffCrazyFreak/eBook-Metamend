@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from ebook_metamend import calibre, enrich
+from ebook_metamend import enrich
 from ebook_metamend.library import Book
 from ebook_metamend.matching import SourceScore
 from ebook_metamend.sources import cache
@@ -165,8 +165,10 @@ class TestTheApplyGate:
     @pytest.fixture
     def written(self, monkeypatch, tmp_path):
         calls = []
-        monkeypatch.setattr(
-            calibre, 'write_metadata', lambda path, args, **kw: (calls.append(args), (True, ''))[1]
+        monkeypatch.setitem(
+            enrich.WRITERS,
+            '.epub',
+            lambda path, gains, merged: (calls.append(gains), (True, ''))[1],
         )
         return calls
 
@@ -196,13 +198,13 @@ class TestTheApplyGate:
         proposal = self._proposal('HIGH', tmp_path)
         monkeypatch.setattr(enrich, 'propose', lambda book: proposal)
         enrich.run([Book(stem='Someone - A Book')], do_apply=True)
-        assert written == [['--publisher', 'Real Press']]
+        assert written == [{'publisher': 'Real Press'}]
 
     def test_med_is_written_only_with_the_override(self, written, tmp_path, monkeypatch):
         proposal = self._proposal('MED', tmp_path)
         monkeypatch.setattr(enrich, 'propose', lambda book: proposal)
         enrich.run([Book(stem='Someone - A Book')], do_apply=True, include_low=True)
-        assert written == [['--publisher', 'Real Press']]
+        assert written == [{'publisher': 'Real Press'}]
 
     def test_a_dry_run_writes_nothing_at_any_confidence(self, written, tmp_path, monkeypatch):
         proposal = self._proposal('HIGH', tmp_path)

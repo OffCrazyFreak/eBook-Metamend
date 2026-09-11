@@ -142,6 +142,23 @@ class TestParseOpf:
     def test_returns_none_on_malformed_xml(self):
         assert parse('<package><unclosed></package>') is None
 
+    def test_epub3_urn_isbn_is_read(self):
+        record = parse(OPF_TEMPLATE.format(identifier='urn:isbn:9780735211292'))
+        assert record['isbn'] == '9780735211292'
+
+    def test_an_empty_urn_does_not_blank_an_earlier_isbn(self):
+        xml = OPF_TEMPLATE.format(
+            identifier='urn:isbn:9780735211292</dc:identifier><dc:identifier>urn:isbn:'
+        )
+        assert parse(xml)['isbn'] == '9780735211292'
+
+    def test_epub2_scheme_attribute_is_read(self):
+        xml = OPF_TEMPLATE.replace(
+            '<dc:identifier id="i">{identifier}</dc:identifier>',
+            '<dc:identifier id="i" opf:scheme="ISBN">9780735211292</dc:identifier>',
+        )
+        assert parse(xml)['isbn'] == '9780735211292'
+
     def test_bare_isbn_is_ignored_by_default(self):
         record = parse(OPF_TEMPLATE.format(identifier='9780735211292'))
         assert record['isbn'] == ''

@@ -8,7 +8,6 @@ import pytest
 
 from ebook_metamend.enrich import (
     MAX_MERGED_TAGS,
-    build_write_args,
     compute_gains,
 )
 from ebook_metamend.enrich import merge as _merge
@@ -154,40 +153,6 @@ class TestComputeGains:
 
     def test_empty_merge_gains_nothing(self):
         assert compute_gains(merge({}), {}, conf='HIGH') == {}
-
-
-class TestBuildWriteArgs:
-    def test_no_gains_produces_no_arguments(self):
-        assert build_write_args({}, merge({})) == []
-
-    def test_series_index_rides_along_with_the_series(self):
-        merged = merge({'a': answer(series='Example Saga', sidx='2')})
-        args = build_write_args({'series': 'Example Saga'}, merged)
-        assert args == ['-s', 'Example Saga', '-i', '2']
-
-    def test_series_without_an_index_omits_it(self):
-        merged = merge({'a': answer(series='Example Saga')})
-        assert build_write_args({'series': 'Example Saga'}, merged) == ['-s', 'Example Saga']
-
-    def test_every_gain_reaches_the_argument_list(self):
-        gains = {
-            'title': 'T',
-            'tags': ['a', 'b'],
-            'description': 'D',
-            'publisher': 'P',
-            'isbn': 'I',
-        }
-        args = build_write_args(gains, merge({}))
-        # Paired, not merely present. Checking only that each flag appears would
-        # pass with two values swapped, which is how a description reaches -t.
-        pairs = dict(zip(args[::2], args[1::2], strict=True))
-        assert pairs == {
-            '-t': 'T',
-            '--tags': 'a,b',
-            '-c': 'D',
-            '--publisher': 'P',
-            '--isbn': 'I',
-        }
 
 
 class TestUnreadableMetadata:
