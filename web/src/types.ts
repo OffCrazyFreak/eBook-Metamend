@@ -80,6 +80,7 @@ export interface BookResult {
 
 export type RunEvent =
   | { type: 'loading'; progress: number; label: string }
+  | { type: 'failed'; message: string }
   | { type: 'ready'; books: BookResult[] }
   | { type: 'querying'; stem: string }
   | { type: 'answer'; stem: string; source: SourceName }

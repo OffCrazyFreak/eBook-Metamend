@@ -53,7 +53,10 @@ const VERDICT_LABEL: Record<Verdict, string> = {
 const EASE = [0.2, 0.8, 0.2, 1] as const
 
 export function App() {
-  const { state, start, reset, stop } = useRun()
+  // ?fail on the URL plays the runtime failure screen for design review.
+  const { state, start, reset, stop, retry } = useRun({
+    failLoad: new URLSearchParams(window.location.search).has('fail'),
+  })
   const [selected, setSelected] = useState<BookResult | null>(null)
   const [origin, setOrigin] = useState<string | null>(null)
   const reduced = useReducedMotion()
@@ -120,6 +123,48 @@ export function App() {
     [state.books],
   )
   const [confirming, setConfirming] = useState(false)
+  const [legend, setLegend] = useState(false)
+
+  // Row shortcuts while results are up and no dialog or field has the keys.
+  useEffect(() => {
+    if (state.phase !== 'running' && state.phase !== 'done') return
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target
+      if (target instanceof Element && target.closest('input, textarea, [role="dialog"]')) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const rows = [...document.querySelectorAll<HTMLButtonElement>('.bp-row-button')]
+      const at = rows.findIndex((r) => r === document.activeElement)
+      const focusRow = (i: number) => {
+        rows[Math.max(0, Math.min(rows.length - 1, i))]?.focus()
+        e.preventDefault()
+      }
+      switch (e.key) {
+        case 'ArrowDown':
+        case 'j':
+          return focusRow(at + 1)
+        case 'ArrowUp':
+        case 'k':
+          return focusRow(at < 0 ? 0 : at - 1)
+        case ' ': {
+          const stem = rows[at]?.closest<HTMLElement>('[data-stem]')?.dataset.stem
+          const book = state.books.find((b) => b.stem === stem)
+          if (book && book.status === 'done') {
+            setSelection((sel) => toggled(sel, book))
+            e.preventDefault()
+          }
+          return
+        }
+        case 'a':
+          return choose('all')
+        case 'n':
+          return choose('none')
+        case '?':
+          return setLegend((l) => !l)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [state.phase, state.books, choose])
   const pickedBooks = useCallback(
     () => state.books.filter((b) => willWrite(b) && isSelected(selection, b)),
     [state.books, selection],
@@ -196,8 +241,13 @@ export function App() {
           {state.phase === 'idle' && (
             <Hero onStart={begin} notice={notice} showLockup={heroHasLockup} />
           )}
-          {state.phase === 'loading' && (
-            <Loading progress={state.loading.progress} label={state.loading.label} />
+          {(state.phase === 'loading' || state.phase === 'failed') && (
+            <Loading
+              progress={state.loading.progress}
+              label={state.loading.label}
+              error={state.error}
+              onRetry={retry}
+            />
           )}
           {(state.phase === 'running' || state.phase === 'done') && (
             <>
@@ -221,6 +271,7 @@ export function App() {
                 onToggle={toggle}
                 onToggleAll={(on) => choose(on ? 'all' : 'none')}
                 onSelect={open}
+                onLegend={() => setLegend(true)}
               />
               <Actions
                 counts={counts}
@@ -245,6 +296,7 @@ export function App() {
         onDownload={() => selected && download([selected])}
         onClose={close}
       />
+      <Legend open={legend} onClose={() => setLegend(false)} />
       <WriteConfirm
         open={confirming}
         count={counts.picked}
@@ -597,7 +649,17 @@ function Crosshair({ aim, live }: { aim: { x: number; y: number }; live: boolean
   )
 }
 
-function Loading({ progress, label }: { progress: number; label: string }) {
+function Loading({
+  progress,
+  label,
+  error,
+  onRetry,
+}: {
+  progress: number
+  label: string
+  error: string | null
+  onRetry: () => void
+}) {
   const reduced = useReducedMotion()
   const done = progress >= 1
   return (
@@ -613,7 +675,7 @@ function Loading({ progress, label }: { progress: number; label: string }) {
           <motion.path
             key={i}
             d={d}
-            className="bp-wire"
+            className={error ? 'bp-wire-dashed' : 'bp-wire'}
             pathLength={1}
             initial={{ pathLength: 0 }}
             animate={{ pathLength: Math.max(0, Math.min(1, progress * 1.15 - i * 0.05)) }}
@@ -649,11 +711,27 @@ function Loading({ progress, label }: { progress: number; label: string }) {
           />
         ))}
       </svg>
-      <span className="bp-dim mt-4 w-64">loading python</span>
-      <p className="bp-display mt-4 text-2xl md:text-3xl">{label}</p>
-      <p className="bp-mono mt-3 text-xs text-[var(--bp-muted)]">
-        {Math.round(progress * 100)}% of about 6 MB, once. Cached after that.
-      </p>
+      <span className="bp-dim mt-4 w-64">{error ? 'runtime not loaded' : 'loading python'}</span>
+      {error ? (
+        <>
+          <p className="bp-display mt-4 text-2xl md:text-3xl">
+            Stopped at {Math.round(progress * 100)}%
+          </p>
+          <p className="bp-mono mt-3 max-w-md text-xs text-[var(--bp-muted)]" role="alert">
+            {error}
+          </p>
+          <button className="bp-mono bp-link mt-4 text-xs text-[var(--bp-cyan)]" onClick={onRetry}>
+            [ retry ]
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="bp-display mt-4 text-2xl md:text-3xl">{label}</p>
+          <p className="bp-mono mt-3 text-xs text-[var(--bp-muted)]">
+            {Math.round(progress * 100)}% of about 6 MB, once. Cached after that.
+          </p>
+        </>
+      )}
     </section>
   )
 }
@@ -793,6 +871,7 @@ function Results({
   onToggle,
   onToggleAll,
   onSelect,
+  onLegend,
 }: {
   books: BookResult[]
   active: string | null
@@ -806,6 +885,7 @@ function Results({
   onToggle: (book: BookResult) => void
   onToggleAll: (include: boolean) => void
   onSelect: (b: BookResult) => void
+  onLegend: () => void
 }) {
   const reduced = useReducedMotion()
   const checked = books.filter((b) => b.status === 'done')
@@ -824,7 +904,17 @@ function Results({
         <span>file</span>
         <span className="hidden md:block">sources</span>
         <span className="hidden md:block">gains</span>
-        <span className="text-right">verdict</span>
+        <span className="flex items-center justify-end gap-3">
+          <button
+            type="button"
+            className="bp-link hidden normal-case md:inline"
+            onClick={() => onLegend()}
+            aria-label="Keyboard shortcuts"
+          >
+            [ ? ]
+          </button>
+          verdict
+        </span>
       </li>
       <AnimatePresence initial={false}>
         {books.map((book, i) => {
@@ -960,6 +1050,42 @@ function Gains({
       <Check className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
       {outcome}
     </motion.span>
+  )
+}
+
+const KEYS: [string, string][] = [
+  ['\u2191 \u2193 or j k', 'move between rows'],
+  ['space', 'tick or untick the row'],
+  ['enter', 'open the row'],
+  ['a', 'select all'],
+  ['n', 'select none'],
+  ['?', 'this legend'],
+]
+
+function Legend({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="max-w-xs border-[var(--bp-line-strong)] bg-[var(--bp-deep)] p-6 text-[var(--bp-ink)]"
+      >
+        <DialogClose className="bp-mono bp-link absolute top-5 right-5 text-xs text-[var(--bp-muted)]">
+          [ close ]
+        </DialogClose>
+        <DialogTitle className="bp-dim w-40 text-xs">keys</DialogTitle>
+        <DialogDescription className="sr-only">
+          Keyboard shortcuts for the results list
+        </DialogDescription>
+        <dl className="bp-mono mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-xs">
+          {KEYS.map(([key, what]) => (
+            <div key={key} className="contents">
+              <dt className="text-[var(--bp-cyan)]">{key}</dt>
+              <dd className="text-[var(--bp-muted)]">{what}</dd>
+            </div>
+          ))}
+        </dl>
+      </DialogContent>
+    </Dialog>
   )
 }
 

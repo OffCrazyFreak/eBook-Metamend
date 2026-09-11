@@ -18,7 +18,13 @@ export interface Simulation {
 
 export function simulateRun(
   onEvent: (event: RunEvent) => void,
-  options: { books?: BookResult[]; perBookMs?: number; loadingMs?: number } = {},
+  options: {
+    books?: BookResult[]
+    perBookMs?: number
+    loadingMs?: number
+    // Stop the runtime fetch partway, to show the failure screen.
+    failLoad?: boolean
+  } = {},
 ): Simulation {
   const books = (options.books ?? MOCK_BOOKS).map((b) => ({ ...b, status: 'pending' as const }))
   const perBook = options.perBookMs ?? 600
@@ -31,6 +37,15 @@ export function simulateRun(
       onEvent({ type: 'loading', progress: i / LOADING_STEPS.length, label }),
     )
   })
+  if (options.failLoad) {
+    at(loadingMs * 0.6, () =>
+      onEvent({
+        type: 'failed',
+        message: 'The Python runtime could not be fetched. Check the connection and try again.',
+      }),
+    )
+    return { cancel: () => timers.forEach((t) => window.clearTimeout(t)) }
+  }
   at(loadingMs, () => {
     onEvent({ type: 'loading', progress: 1, label: 'Ready' })
     onEvent({ type: 'ready', books })

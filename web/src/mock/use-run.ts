@@ -4,11 +4,13 @@ import type { BookResult, RunEvent } from '@/types'
 
 import { applyEvent, fromFileNames, simulateRun, type Simulation } from './simulate'
 
-export type Phase = 'idle' | 'loading' | 'running' | 'done'
+export type Phase = 'idle' | 'loading' | 'failed' | 'running' | 'done'
 
 export interface RunState {
   phase: Phase
   loading: { progress: number; label: string }
+  // Why the runtime did not load, shown under the half-drawn mark.
+  error: string | null
   books: BookResult[]
   elapsedMs: number
   // Which stem is being queried right now, for the row that gets the cursor.
@@ -18,6 +20,7 @@ export interface RunState {
 const INITIAL: RunState = {
   phase: 'idle',
   loading: { progress: 0, label: '' },
+  error: null,
   books: [],
   elapsedMs: 0,
   active: null,
@@ -25,7 +28,9 @@ const INITIAL: RunState = {
 
 // One state machine for every variation. Phase 2 swaps simulateRun for the
 // worker and nothing above this line changes.
-export function useRun(options: { perBookMs?: number; loadingMs?: number } = {}) {
+export function useRun(
+  options: { perBookMs?: number; loadingMs?: number; failLoad?: boolean } = {},
+) {
   const [state, setState] = useState<RunState>(INITIAL)
   const simulation = useRef<Simulation | null>(null)
 
@@ -39,6 +44,8 @@ export function useRun(options: { perBookMs?: number; loadingMs?: number } = {})
             phase: 'loading',
             loading: { progress: event.progress, label: event.label },
           }
+        case 'failed':
+          return { ...prev, phase: 'failed', error: event.message }
         case 'ready':
           return { ...prev, phase: 'running', books }
         case 'querying':
@@ -52,15 +59,26 @@ export function useRun(options: { perBookMs?: number; loadingMs?: number } = {})
     })
   }, [])
 
+  const lastNames = useRef<string[]>([])
   const start = useCallback(
     (names: string[]) => {
       simulation.current?.cancel()
+      lastNames.current = names
       const books = names.length ? fromFileNames(names) : undefined
       setState({ ...INITIAL, phase: 'loading' })
       simulation.current = simulateRun(handle, { ...options, books })
     },
-    [handle, options.perBookMs, options.loadingMs],
+    [handle, options.perBookMs, options.loadingMs, options.failLoad],
   )
+
+  // Same files, another go at the runtime. The mock succeeds on the retry.
+  const retry = useCallback(() => {
+    simulation.current?.cancel()
+    const names = lastNames.current
+    const books = names.length ? fromFileNames(names) : undefined
+    setState({ ...INITIAL, phase: 'loading' })
+    simulation.current = simulateRun(handle, { ...options, books, failLoad: false })
+  }, [handle, options.perBookMs, options.loadingMs])
 
   const reset = useCallback(() => {
     simulation.current?.cancel()
@@ -80,5 +98,5 @@ export function useRun(options: { perBookMs?: number; loadingMs?: number } = {})
 
   useEffect(() => () => simulation.current?.cancel(), [])
 
-  return { state, start, reset, stop }
+  return { state, start, reset, stop, retry }
 }
