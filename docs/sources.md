@@ -21,3 +21,13 @@ Measured on 2026-09-11 against a 50-book sample of a private English-language li
 - Inventaire costs three calls per book at most: one search for works, one entity batch for the closest hits, one label batch for their authors, genres, subjects and series. Only work hits scoring at least `TITLE_WEAK` earn the round trip.
 - Web build: Apple Books, Open Library and Inventaire, called from the visitor's browser. No server, no key, no upload: the file never leaves the browser, which also sidesteps the 4.5 MB request limit of serverless hosts.
 - Google is dropped from the web build rather than proxied, because a working key would tie the deployment to one person's Google account.
+
+## Adding the two, measured
+
+Same 50-book sample, replayed from recorded answers with three sources (Kobo, Google, Open Library) and then with five:
+
+- HIGH 33 to 35, MED 9 to 7, LOW 8 both times. No verdict weakened.
+- The two books that rose were each named identically by Open Library, Apple Books and Inventaire (title 0.95, author at least 0.95 against the filename), while Kobo and Google had offered a different book (title 0.55 to 0.70). Checked by hand.
+- Sources credited on the 45 books with at least one answer: Apple 35, Kobo 34, Open Library 32, Google 31, Inventaire 30.
+- Gains did not change (the sample library is already filled in), so the effect of the two sources is confidence, not fields.
+- A live recording of the sample took about 15 minutes for 50 books with all five sources; Inventaire's three calls per book are the larger share.
