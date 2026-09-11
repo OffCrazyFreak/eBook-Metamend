@@ -16,6 +16,8 @@ Measured on 2026-09-11 against a 50-book sample of a private English-language li
 
 ## Decisions
 
-- Desktop: Kobo, Google and Open Library through Calibre's plugins and a direct HTTP client. Apple Books and Inventaire are candidates to add; adding a source is an ask-first change.
+- Desktop: Kobo and Google through Calibre's plugins; Open Library, Apple Books and Inventaire through one HTTP function (`sources/http.py`) whose transport can be swapped, so the same modules run in a browser. `--sources kobo,google` narrows a run to any subset.
+- Apple Books is searched with the filename's short title plus author. Measured on the same sample: that form answers 38 of 50 and is strong on 37; the title alone answers all 50 but is strong on only 36, and none of the 12 books the first form misses becomes strong on a retry without the author, so there is no fallback call.
+- Inventaire costs three calls per book at most: one search for works, one entity batch for the closest hits, one label batch for their authors, genres, subjects and series. Only work hits scoring at least `TITLE_WEAK` earn the round trip.
 - Web build: Apple Books, Open Library and Inventaire, called from the visitor's browser. No server, no key, no upload: the file never leaves the browser, which also sidesteps the 4.5 MB request limit of serverless hosts.
 - Google is dropped from the web build rather than proxied, because a working key would tie the deployment to one person's Google account.

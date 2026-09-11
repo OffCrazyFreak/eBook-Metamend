@@ -190,25 +190,25 @@ class TestTheApplyGate:
     @pytest.mark.parametrize('conf', ['MED', 'LOW'])
     def test_below_high_nothing_is_written_by_default(self, conf, written, tmp_path, monkeypatch):
         proposal = self._proposal(conf, tmp_path)
-        monkeypatch.setattr(enrich, 'propose', lambda book: proposal)
+        monkeypatch.setattr(enrich, 'propose', lambda book, **_: proposal)
         enrich.run([Book(stem='Someone - A Book')], do_apply=True)
         assert written == []
 
     def test_high_is_written(self, written, tmp_path, monkeypatch):
         proposal = self._proposal('HIGH', tmp_path)
-        monkeypatch.setattr(enrich, 'propose', lambda book: proposal)
+        monkeypatch.setattr(enrich, 'propose', lambda book, **_: proposal)
         enrich.run([Book(stem='Someone - A Book')], do_apply=True)
         assert written == [{'publisher': 'Real Press'}]
 
     def test_med_is_written_only_with_the_override(self, written, tmp_path, monkeypatch):
         proposal = self._proposal('MED', tmp_path)
-        monkeypatch.setattr(enrich, 'propose', lambda book: proposal)
+        monkeypatch.setattr(enrich, 'propose', lambda book, **_: proposal)
         enrich.run([Book(stem='Someone - A Book')], do_apply=True, include_low=True)
         assert written == [{'publisher': 'Real Press'}]
 
     def test_a_dry_run_writes_nothing_at_any_confidence(self, written, tmp_path, monkeypatch):
         proposal = self._proposal('HIGH', tmp_path)
-        monkeypatch.setattr(enrich, 'propose', lambda book: proposal)
+        monkeypatch.setattr(enrich, 'propose', lambda book, **_: proposal)
         enrich.run([Book(stem='Someone - A Book')], do_apply=False, include_low=True)
         assert written == []
 

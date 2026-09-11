@@ -1,11 +1,14 @@
 """Metadata sources, and what each of them is actually like.
 
-Measured across a few hundred books:
+Measured across a few hundred books, then on a 50-book sample (docs/sources.md):
 
 ============  ==========================================================
 Kobo          Best coverage, but silently invents matches. Never alone.
+              Scrapes through a bot-check bypass: desktop only.
+Apple Books   Names the right book most often of all. Keyless, browser-safe.
 Google Books  Misses more, fails loudly. Reliable when it answers.
-Open Library  Same, thinner catalogue.
+Open Library  Same, thinner catalogue. Keyless, browser-safe.
+Inventaire    Wikidata-backed; always answers, so it leans on the scoring.
 Goodreads     Blocks after a single request. Not used.
 Amazon        Returns SEO spam. Not used.
 ============  ==========================================================
@@ -17,13 +20,17 @@ single source can write on its own authority.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import cache
+from . import cache, http
+from .apple import PAUSE as APPLE_PAUSE
+from .apple import fetch_apple
 from .calibre_plugin import fetch_google, fetch_kobo
 from .errors import SourceError, SourceUnavailable
+from .inventaire import PAUSE as INVENTAIRE_PAUSE
+from .inventaire import fetch_inventaire
 from .openlibrary import fetch_openlibrary
 
 
@@ -72,16 +79,39 @@ SOURCES: tuple[Source, ...] = (
     Source('kobo', cache.wrap('kobo', fetch_kobo), pause=2),
     Source('google', cache.wrap('google', fetch_google), pause=8),
     Source('openlib', cache.wrap('openlib', fetch_openlibrary), pause=1),
+    Source('apple', cache.wrap('apple', fetch_apple), pause=APPLE_PAUSE),
+    Source('inventaire', cache.wrap('inventaire', fetch_inventaire), pause=INVENTAIRE_PAUSE),
 )
+
+#: What a browser can reach: the three that answer keyless with a CORS header.
+#: Kobo scrapes through a bot-check bypass and Google's keyless quota is shared
+#: and exhausted daily, so neither can be hosted.
+WEB_SOURCE_NAMES = ('apple', 'openlib', 'inventaire')
+
+
+def select(names: Iterable[str]) -> tuple[Source, ...]:
+    """The sources with these names, in SOURCES order. Unknown names raise."""
+    wanted = set(names)
+    unknown = wanted - {s.name for s in SOURCES}
+    if unknown:
+        known = ', '.join(s.name for s in SOURCES)
+        raise ValueError(f'unknown source(s): {", ".join(sorted(unknown))}; known: {known}')
+    return tuple(s for s in SOURCES if s.name in wanted)
+
 
 __all__ = [
     'SOURCES',
+    'WEB_SOURCE_NAMES',
     'Pacer',
     'Source',
     'SourceError',
     'SourceUnavailable',
     'cache',
+    'fetch_apple',
     'fetch_google',
+    'fetch_inventaire',
     'fetch_kobo',
     'fetch_openlibrary',
+    'http',
+    'select',
 ]

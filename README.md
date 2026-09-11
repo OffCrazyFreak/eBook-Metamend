@@ -21,7 +21,7 @@ The obvious fix is to look each book up online and write back whatever comes bac
 
 **Your filenames are the ground truth.** Online sources are witnesses, not authorities.
 
-Three sources are queried per book. Every answer is scored against the filename *and* its author, and only answers that clear a threshold are written:
+Five sources are queried per book (`--sources` narrows the set). Every answer is scored against the filename *and* its author, and only answers that clear a threshold are written:
 
 | Confidence | Condition | Written? |
 | ---------- | --------- | -------- |
@@ -54,7 +54,7 @@ Options: `--apply`, `--match`, `--limit`, `--start`, `--out`, `--include-low`.
 
 ## Features
 
-- Three metadata sources per book (Kobo, Google Books, Open Library), each scored on its own
+- Five metadata sources per book (Kobo, Google Books, Open Library, Apple Books, Inventaire), each scored on its own
 - Filename-anchored confidence model requiring two independent sources to agree
 - Rejects adaptations, translations and omnibus false positives
 - Title similarity that understands subtitles and refuses omnibus false positives
@@ -68,7 +68,7 @@ Options: `--apply`, `--match`, `--limit`, `--start`, `--out`, `--include-low`.
 
 - **Language:** Python 3.10+, `src/` layout, standard library plus [pypdf](https://pypdf.readthedocs.io/) (`urllib`, `xml.etree`, `difflib`, `argparse`, `zipfile`)
 - **Metadata I/O:** native. EPUBs are edited inside the zip with only the OPF replaced; PDFs get an incremental update through pypdf, so the original bytes stay a prefix of the file; a PDF whose cross-reference chain pypdf cannot follow is rewritten in full instead, and the run reports which happened
-- **Sources:** Kobo and Google Books via [Calibre](https://calibre-ebook.com/) plugins, Open Library via its public search API
+- **Sources:** Kobo and Google Books via [Calibre](https://calibre-ebook.com/) plugins; Open Library, Apple Books and Inventaire through their keyless public APIs
 - **Tooling:** ruff, pytest, GitHub Actions. CI enforces that nothing beyond pypdf is imported
 
 Metadata used to go through Calibre's `ebook-meta`, which edits in place but splits every tag on commas and rewrites the OPF wholesale. The native writers keep every other archive member byte for byte, keep `mimetype` first and stored, and store a tag exactly as given.
@@ -77,7 +77,7 @@ Metadata used to go through Calibre's `ebook-meta`, which edits in place but spl
 
 | Command | Purpose |
 | ------- | ------- |
-| `ebook-metamend` | The main tool. Queries three sources, scores, proposes, optionally applies |
+| `ebook-metamend` | The main tool. Queries five sources, scores, proposes, optionally applies |
 | `ebook-metamend-epub-to-pdf` | Copies richer EPUB metadata onto its PDF twin. Local only, no network |
 | `ebook-metamend-extract` | Dumps filename, embedded metadata and opening text per book |
 
@@ -93,7 +93,7 @@ src/ebook_metamend/
 ├── calibre.py     the zip-level EPUB reader and the fetch-ebook-metadata wrapper
 ├── config.py      paths and the Calibre environment
 ├── writers/       epub and pdf: read and write metadata in place
-└── sources/       kobo, google, openlibrary, and the record/replay cache
+└── sources/       kobo, google, openlibrary, apple, inventaire, one HTTP seam, the replay cache
 tools/             snapshot, strip and replay harnesses for measuring a change
 ```
 
@@ -129,6 +129,8 @@ Answer rates measured on the same 10-book sample, in one run. Behaviour is from 
 | Kobo | 10/10 | Best coverage and the most accurate on editions. Invents a match when it has none, so never trust it alone |
 | Google Books | 8/10 | Answers confidently with adaptations, translations and sequels. Needs a second opinion |
 | Open Library | 0/10 | Thinner catalogue, and unreachable from the machine this was measured on: the TLS handshake to `openlibrary.org` times out most attempts while the rest of the same infrastructure responds instantly. It reports its failures rather than passing them off as "not found", and a source that fails several books in a row is shelved for the rest of the run |
+| Apple Books | see [docs/sources.md](docs/sources.md) | Names the right book most often of all on a 50-book sample. Keyless, browser-safe, about 20 calls a minute. Description and genres, never a publisher or ISBN |
+| Inventaire | see [docs/sources.md](docs/sources.md) | Built on Wikidata. Answers at work level, so it needs two more calls per book for authors and subjects. Always returns something, so the scoring does the rejecting |
 | Goodreads | - | Blocks after a single request. Not used |
 | Amazon | - | Returns SEO spam. Not used |
 
@@ -216,7 +218,7 @@ Security issues go through [private reporting](https://github.com/OffCrazyFreak/
 
 **Created by: Jakov Jakovac**
 
-Built on top of [Calibre](https://calibre-ebook.com/) by Kovid Goyal, and the open [Open Library](https://openlibrary.org/) search API.
+Built on top of [Calibre](https://calibre-ebook.com/) by Kovid Goyal, and the open [Open Library](https://openlibrary.org/), [Apple Books](https://performance-partners.apple.com/search-api) and [Inventaire](https://api.inventaire.io/) search APIs.
 
 ## License [![MIT][mit-shield]][mit]
 

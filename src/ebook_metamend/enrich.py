@@ -15,7 +15,7 @@ from typing import Any
 
 from . import calibre, matching, tags
 from .library import Book, books
-from .sources import SOURCES, Pacer, cache
+from .sources import SOURCES, Pacer, Source, cache
 from .sources.errors import SourceError, SourceUnavailable
 from .writers import epub, pdf
 
@@ -94,7 +94,13 @@ def reset_run_state() -> None:
     _pacer = Pacer()
 
 
-def query_sources(title: str, author: str, *, pause: bool = True) -> dict[str, dict[str, Any]]:
+def query_sources(
+    title: str,
+    author: str,
+    *,
+    pause: bool = True,
+    sources: tuple[Source, ...] | None = None,
+) -> dict[str, dict[str, Any]]:
     """Ask every source about one book. Sources with no answer are omitted.
 
     A source that cannot run at all is recorded separately. Folding it in with
@@ -102,7 +108,7 @@ def query_sources(title: str, author: str, *, pause: bool = True) -> dict[str, d
     reduced a three-source cross-check to a single source.
     """
     answers: dict[str, dict[str, Any]] = {}
-    for source in SOURCES:
+    for source in SOURCES if sources is None else sources:
         if source.name in unavailable_sources:
             continue
         try:
@@ -338,7 +344,7 @@ def compute_gains(merged: dict[str, Any], current: dict[str, Any], conf: str) ->
     return gains
 
 
-def propose(book: Book) -> Proposal | None:
+def propose(book: Book, *, sources: tuple[Source, ...] | None = None) -> Proposal | None:
     """Decide what, if anything, should be written to one book.
 
     ``None`` means no source answered, which is a normal outcome and not a failure.
@@ -349,7 +355,7 @@ def propose(book: Book) -> Proposal | None:
     # look equally (un)related. There is nothing to score against, so do not ask.
     if not facts.query:
         return None
-    answers = query_sources(facts.query, facts.author)
+    answers = query_sources(facts.query, facts.author, sources=sources)
     if not answers:
         return None
 
@@ -415,12 +421,16 @@ def run(
     do_apply: bool = False,
     include_low: bool = False,
     on_book: Callable[[int, int, Book, Proposal | None], None] | None = None,
+    sources: tuple[Source, ...] | None = None,
 ) -> list[Proposal]:
-    """Enrich the given books. Returns one proposal per book that got an answer."""
+    """Enrich the given books. Returns one proposal per book that got an answer.
+
+    ``sources`` narrows the catalogues asked; ``None`` means all of them.
+    """
     reset_run_state()
     proposals: list[Proposal] = []
     for index, book in enumerate(selected, 1):
-        proposal = propose(book)
+        proposal = propose(book, sources=sources)
         if proposal is not None:
             if do_apply and proposal.gains and (proposal.conf == 'HIGH' or include_low):
                 apply(proposal)
