@@ -123,17 +123,21 @@ class TestApple:
         assert record['authors'] == ['Mara Voss']
         assert 'media=ebook' in asked[0] and 'entity=ebook' in asked[0]
 
-    def test_html_is_stripped_and_the_storefront_genre_dropped(self):
+    def test_the_description_keeps_its_html_and_the_storefront_genre_goes(self):
+        """Kobo, Google and Calibre all store descriptions as HTML; so does this."""
         serve({'itunes.apple.com': APPLE_HITS})
         record = fetch_apple('The Quiet Orchard', 'Mara Voss')
 
-        assert record['description'] == 'A house, a hill & a harvest.'
+        assert record['description'] == '<p>A house, a hill &amp; a harvest.</p>'
         assert record['tags'] == ['Fiction & Literature', 'Literary']
 
-    def test_paragraph_breaks_keep_words_apart(self):
-        hit = dict(APPLE_HITS['results'][0], description='<p>One.</p><p>Two&#xa0;three</p>')
+    def test_non_breaking_spaces_and_stray_whitespace_go(self):
+        hit = dict(APPLE_HITS['results'][0], description='<b>One.</b><br />\n  Two&#xa0;three  ')
         serve({'itunes.apple.com': {'results': [hit]}})
-        assert fetch_apple('The Quiet Orchard', 'Mara Voss')['description'] == 'One. Two three'
+        assert (
+            fetch_apple('The Quiet Orchard', 'Mara Voss')['description']
+            == '<b>One.</b><br /> Two three'
+        )
 
     def test_the_author_breaks_a_title_tie(self):
         twin = dict(APPLE_HITS['results'][0], artistName='Someone Else', description='other')
@@ -267,10 +271,28 @@ class TestInventaire:
         record = fetch_inventaire('The Quiet Orchard', 'Mara Voss')
         assert record['series'] == 'Hill Country' and record['sidx'] is None
 
-    def test_a_label_in_another_language_still_counts(self):
+    def test_an_author_labelled_in_another_language_still_counts(self):
         serve_inventaire()
         record = fetch_inventaire('The Quiet Orchard Companion', 'Quelqu\'un')
         assert record['authors'] == ["Quelqu'un"]
+
+    def test_a_subject_without_an_english_label_is_not_a_tag(self):
+        """A French-only subject on an English library is noise, not metadata."""
+        labels = dict(INVENTAIRE_LABELS['entities'])
+        labels['wd:Q21'] = {'labels': {'fr': 'vergers'}}
+        labels['wd:Q20'] = {'labels': {'mul': 'literary fiction'}}
+
+        def transport(url, headers, timeout):
+            if 'api/search' in url:
+                return json.dumps(INVENTAIRE_SEARCH).encode()
+            uris = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['uris'][0].split('|')
+            if set(uris) <= set(INVENTAIRE_WORKS['entities']):
+                return json.dumps(INVENTAIRE_WORKS).encode()
+            return json.dumps({'entities': labels}).encode()
+
+        http.set_transport(transport)
+        record = fetch_inventaire('The Quiet Orchard', 'Mara Voss')
+        assert record['tags'] == ['literary fiction']
 
 
 class TestSelect:

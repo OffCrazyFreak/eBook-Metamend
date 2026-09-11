@@ -124,6 +124,13 @@ class TestComputeGains:
             merged, {'description': 'a much longer description'}, conf='HIGH'
         )
 
+    def test_the_same_blurb_in_html_is_not_longer(self):
+        """Markup around the same words must not count as more description."""
+        merged = merge({'a': answer(description='<p><b>The same</b> blurb.<br /></p>')})
+        assert 'description' not in compute_gains(
+            merged, {'description': 'The same blurb.'}, conf='HIGH'
+        )
+
     def test_title_is_only_gained_at_high_confidence(self):
         merged = merge(
             {'a': answer(title='Atomic Habits: An Easy and Proven Way')},

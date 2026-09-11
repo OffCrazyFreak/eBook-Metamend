@@ -7,8 +7,6 @@ level with a description and genres, and gives no publisher or ISBN.
 
 from __future__ import annotations
 
-import html
-import re
 import urllib.parse
 from typing import Any
 
@@ -21,16 +19,18 @@ SEARCH_URL = 'https://itunes.apple.com/search'
 PAUSE = 3
 LIMIT = 5
 TIMEOUT = 10
-_TAG = re.compile(r'<[^>]+>')
 
 
-def _plain(text: str) -> str:
-    """Apple wraps descriptions in HTML; the OPF wants text.
+def _html(text: str) -> str:
+    """Apple's description in the form the library already uses.
 
-    Tags become spaces, not nothing, or a paragraph break glues two words
-    together; the split then also folds the non-breaking spaces Apple leaves.
+    Kobo and Google answer with HTML and Calibre stores comments that way, so
+    nearly every description in a library is HTML; a plain-text one from Apple
+    would be the odd one out and would lose its line breaks. Apple's own markup
+    is kept as it is; only its non-breaking spaces and stray whitespace go.
     """
-    return ' '.join(html.unescape(_TAG.sub(' ', text or '')).split())
+    text = (text or '').replace('\xa0', ' ').replace('&#xa0;', ' ').replace('&nbsp;', ' ')
+    return ' '.join(text.split())
 
 
 def _best(results: list[dict[str, Any]], title: str, author: str) -> dict[str, Any] | None:
@@ -66,7 +66,7 @@ def fetch_apple(title: str, author: str) -> dict[str, Any] | None:
         'title': hit.get('trackName') or '',
         'authors': [hit['artistName']] if hit.get('artistName') else [],
         'publisher': '',
-        'description': _plain(hit.get('description') or ''),
+        'description': _html(hit.get('description') or ''),
         # "Books" is the storefront section, not a genre, and every hit has it.
         'tags': [g for g in (hit.get('genres') or []) if g != 'Books'],
         'series': None,
