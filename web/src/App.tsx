@@ -636,7 +636,7 @@ function Intake({
           onDrop={onDrop}
         >
           <Crosshair aim={aim} live={over} />
-          <span className="bp-dim w-28 self-start">intake</span>
+          <span className="bp-dim w-fit min-w-28 self-start">intake</span>
           <p className="bp-display text-base sm:text-lg md:text-xl">
             {over || pageOver ? 'Release to start checking' : 'Drop files or a folder here'}
           </p>
