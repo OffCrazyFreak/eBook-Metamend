@@ -8,7 +8,7 @@ import json
 import os
 import sys
 
-from . import config, enrich, epub_to_pdf, extract
+from . import config, enrich, epub_to_pdf, extract, sources
 from .enrich import Proposal
 from .library import Book
 from .sources import SOURCES
@@ -65,7 +65,19 @@ def enrich_command(argv: list[str] | None = None) -> int:
         action='store_true',
         help='also apply MED and LOW confidence results (not recommended)',
     )
+    parser.add_argument(
+        '--sources',
+        default='',
+        help='comma-separated catalogues to ask (default: all of '
+        + ', '.join(s.name for s in SOURCES)
+        + ')',
+    )
     args = parser.parse_args(argv)
+    try:
+        names = [n.strip() for n in args.sources.split(',') if n.strip()]
+        chosen = sources.select(names) if names else None
+    except ValueError as exc:
+        parser.error(str(exc))
     config.warn_if_unsafe_cal_root()
 
     selected = enrich.select(match=args.match, limit=args.limit, start=args.start)
@@ -87,13 +99,14 @@ def enrich_command(argv: list[str] | None = None) -> int:
         do_apply=args.apply,
         include_low=args.include_low,
         on_book=report_and_record,
+        sources=chosen,
     )
 
     for name, why in enrich.unavailable_sources.items():
         print(f'warning: source {name!r} was unavailable for this run: {why}', file=sys.stderr)
     if enrich.unavailable_sources:
         print(
-            f'warning: {len(enrich.unavailable_sources)} of {len(SOURCES)} sources were '
+            f'warning: {len(enrich.unavailable_sources)} of {len(chosen or SOURCES)} sources were '
             'unavailable, so cross-checking was weaker than intended',
             file=sys.stderr,
         )

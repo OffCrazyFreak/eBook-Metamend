@@ -4,7 +4,7 @@ Measured on 2026-09-11 against a 50-book sample of a private English-language li
 
 ## Strong matches out of 50
 
-- Apple Books (iTunes Search API): 36. Keyless, allows browser calls, about 20 calls a minute. Gives title, authors, description and genres; no publisher or ISBN.
+- Apple Books (iTunes Search API): 37 with the short title plus author (36 with the title alone). Keyless, allows browser calls, about 20 calls a minute. Gives title, authors, description and genres; no publisher or ISBN.
 - Kobo (Calibre plugin): 32. Scrapes kobo.com through a Cloudflare bot-check bypass; the plugin's own README documents lockouts. Desktop only, never to be hosted.
 - Open Library: 32. Keyless, allows browser calls, 1 request a second (3 with a User-Agent that names a contact). Work-level ISBN lists, not edition-level.
 - Google Books: 31. The keyless JSON API bills every anonymous request worldwide to one shared quota that is exhausted daily (HTTP 429 names the shared project). Calibre uses an old keyless Atom feed instead, which answered 3 of 6 attempts and refuses browser calls. A per-project key needs a Google Cloud account.
@@ -16,6 +16,18 @@ Measured on 2026-09-11 against a 50-book sample of a private English-language li
 
 ## Decisions
 
-- Desktop: Kobo, Google and Open Library through Calibre's plugins and a direct HTTP client. Apple Books and Inventaire are candidates to add; adding a source is an ask-first change.
+- Desktop: Kobo and Google through Calibre's plugins; Open Library, Apple Books and Inventaire through one HTTP function (`sources/http.py`) whose transport can be swapped, so the same modules run in a browser. `--sources kobo,google` narrows a run to any subset.
+- Apple Books is searched with the filename's short title plus author. Measured on the same sample: that form answers 38 of 50 and is strong on 37; the title alone answers all 50 but is strong on only 36, and none of the 12 books the first form misses becomes strong on a retry without the author, so there is no fallback call.
+- Inventaire costs three calls per book at most: one search for works, one entity batch for the closest hits, one label batch for their authors, genres, subjects and series. Only work hits scoring at least `TITLE_WEAK` earn the round trip.
 - Web build: Apple Books, Open Library and Inventaire, called from the visitor's browser. No server, no key, no upload: the file never leaves the browser, which also sidesteps the 4.5 MB request limit of serverless hosts.
 - Google is dropped from the web build rather than proxied, because a working key would tie the deployment to one person's Google account.
+
+## Adding the two, measured
+
+Same 50-book sample, replayed from recorded answers with three sources (Kobo, Google, Open Library) and then with five:
+
+- HIGH 33 to 35, MED 9 to 7, LOW 8 both times. No verdict weakened.
+- The two books that rose were each named identically by Open Library, Apple Books and Inventaire (title 0.95, author at least 0.95 against the filename), while Kobo and Google had offered a different book (title 0.55 to 0.70). Checked by hand.
+- Sources credited on the 45 books with at least one answer: Apple 35, Kobo 34, Open Library 32, Google 31, Inventaire 30.
+- Gains did not change (the sample library is already filled in), so the effect of the two sources is confidence, not fields.
+- A live recording of the sample took about 15 minutes for 50 books with all five sources; Inventaire's three calls per book are the larger share.
