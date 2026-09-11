@@ -2,13 +2,15 @@
 
 Two problems, both measured on real files rather than imagined.
 
-**Commas cannot survive.** Calibre splits subjects on commas at every entry
-point: ``--tags``, ``--from-opf``, all of them. There is no escaping. So a
-Library of Congress heading like ``Angelou, Maya, 1928-2014`` is stored as three
-useless tags. Rather than lose the heading, it is rewritten to ``Maya Angelou``,
-which says the same thing and contains no comma. Ordinary commas are left alone,
-because splitting ``Fiction, general`` into two tags is harmless and arguably
-right.
+**Commas do not survive Calibre.** The writers here store a tag verbatim, comma
+and all, but the file's next stop is usually a Calibre library, and Calibre
+splits every ``dc:subject`` on commas when it reads an EPUB (``opf2.py``) and
+rewrites a comma inside a tag to a semicolon in its database (``db/write.py``).
+So a Library of Congress heading like ``Angelou, Maya, 1928-2014`` would arrive
+as three useless tags. Rather than lose the heading, it is rewritten to
+``Maya Angelou``, which says the same thing and contains no comma. Ordinary
+commas are left alone, because splitting ``Fiction, general`` into two tags is
+harmless and arguably right.
 
 **Some tags are catalogue noise.** A small blocklist, deliberately small: only
 entries that are provably not subjects at all. Anything that is a real subject
@@ -69,8 +71,8 @@ def reformat_name_heading(tag: str, author: str) -> str:
     """``Angelou, Maya, 1928-2014`` becomes ``Maya Angelou``, for that author.
 
     ``author`` is the book's author, taken from the filename. Only a heading that
-    names that person is rewritten. Everything else keeps its commas and is split
-    by Calibre, which for "United States, History, 1861-1865" yields the tags
+    names that person is rewritten. Everything else keeps its commas; a Calibre
+    library that later splits "United States, History, 1861-1865" gets the tags
     "United States" and "History": two ordinary subjects, and a far better
     outcome than the "History United States" this used to produce.
     """
