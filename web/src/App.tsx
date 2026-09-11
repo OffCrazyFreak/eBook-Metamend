@@ -16,11 +16,12 @@ import {
 import {
   canWriteInPlace,
   hasFiles,
-  namesFromDrop,
-  namesFromFileList,
+  intakeFromDrop,
+  intakeFromFileList,
+  intakeFromPicker,
   type Intake as IntakeResult,
 } from '@/intake'
-import { useRun } from '@/mock/use-run'
+import { useRun, type Outcome } from '@/run/use-run'
 import {
   DEFAULT_SELECTION,
   PRESET_LABEL,
@@ -38,6 +39,7 @@ import {
   type BookResult,
   type Confidence,
   type Metadata,
+  type SourceName,
 } from '@/types'
 
 type Verdict = Confidence | 'NONE' | 'UNREADABLE'
@@ -54,7 +56,16 @@ const EASE = [0.2, 0.8, 0.2, 1] as const
 
 export function App() {
   // ?fail on the URL plays the runtime failure screen for design review.
-  const { state, start, reset, stop, retry } = useRun({
+  const {
+    state,
+    start,
+    playSample: sample,
+    reset,
+    stop,
+    retry,
+    repair,
+    writable,
+  } = useRun({
     failLoad: new URLSearchParams(window.location.search).has('fail'),
   })
   const [selected, setSelected] = useState<BookResult | null>(null)
@@ -99,9 +110,10 @@ export function App() {
   }, [morph])
 
   const [selection, setSelection] = useState<Selection>(DEFAULT_SELECTION)
-  // What happened to a book after the run: Phase 2 fills this from the
-  // download and write-back paths; for now the buttons mark the selection.
+  // What happened to a book after the run, from the download and write-back paths.
   const [outcome, setOutcome] = useState<Map<string, Outcome>>(() => new Map())
+  // Books a repair could not place, in one line under the actions.
+  const [trouble, setTrouble] = useState<string[]>([])
   const counts = useMemo(() => {
     const done = state.books.filter((b) => b.status === 'done')
     const writes = done.filter(willWrite)
@@ -111,7 +123,7 @@ export function App() {
       high: done.filter((b) => verdict(b) === 'HIGH').length,
       writes: writes.length,
       // Files the download would hold, and whether every repairable one is in.
-      picked: writes.filter((b) => isSelected(selection, b)).length,
+      picked: writes.filter((b) => isSelected(selection, b) && !outcome.has(b.stem)).length,
       allWrites: writes.every((b) => isSelected(selection, b)),
       written: [...outcome.values()].filter((o) => o === 'written').length,
       downloaded: [...outcome.values()].filter((o) => o === 'downloaded').length,
@@ -165,27 +177,34 @@ export function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [state.phase, state.books, choose])
+  // Books already written or downloaded are done; a second pass would re-apply.
   const pickedBooks = useCallback(
-    () => state.books.filter((b) => willWrite(b) && isSelected(selection, b)),
-    [state.books, selection],
+    () =>
+      state.books.filter((b) => willWrite(b) && isSelected(selection, b) && !outcome.has(b.stem)),
+    [state.books, selection, outcome],
   )
-  const download = useCallback(
-    (books: BookResult[]) =>
-      setOutcome((prev) => {
-        const next = new Map(prev)
-        for (const b of books) next.set(b.stem, 'downloaded')
-        return next
-      }),
-    [],
+  const [busy, setBusy] = useState(false)
+  const place = useCallback(
+    async (books: BookResult[], mode: Outcome) => {
+      setBusy(true)
+      try {
+        const result = await repair(books, mode)
+        setOutcome((prev) => new Map([...prev, ...result.outcomes]))
+        setTrouble(result.failures)
+      } catch (error) {
+        // A refused permission or a failed bundle must say so, not look like nothing happened.
+        setTrouble([error instanceof Error ? error.message : String(error)])
+      } finally {
+        setBusy(false)
+      }
+    },
+    [repair],
   )
+  const download = useCallback((books: BookResult[]) => void place(books, 'downloaded'), [place])
   const write = useCallback(() => {
-    setOutcome((prev) => {
-      const next = new Map(prev)
-      for (const b of pickedBooks()) next.set(b.stem, 'written')
-      return next
-    })
     setConfirming(false)
-  }, [pickedBooks])
+    void place(pickedBooks(), 'written')
+  }, [pickedBooks, place])
   const [others, setOthers] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   // Only the sample link may start a run with no files; an empty drop or an
@@ -204,18 +223,25 @@ export function App() {
       }
       setNotice(null)
       setOthers(intake.others)
-      start(intake.books)
+      void start(intake)
     },
     [start],
   )
+  // The dev server exposes the intake so an automated check can hand in
+  // files with handles; the built site never has this.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    ;(window as unknown as { __metamend?: unknown }).__metamend = { begin }
+  }, [begin])
   const playSample = useCallback(() => {
     setNotice(null)
     setOthers(0)
-    start([])
-  }, [start])
+    sample()
+  }, [sample])
   const restart = useCallback(() => {
     setSelection(DEFAULT_SELECTION)
     setOutcome(new Map())
+    setTrouble([])
     setOthers(0)
     reset()
   }, [reset])
@@ -288,6 +314,10 @@ export function App() {
               <Actions
                 counts={counts}
                 done={state.phase === 'done'}
+                busy={busy}
+                canWrite={canWriteInPlace && writable(pickedBooks())}
+                trouble={trouble}
+                unavailable={state.unavailable}
                 onDownload={() => download(pickedBooks())}
                 onWrite={() => setConfirming(true)}
                 onReset={restart}
@@ -305,6 +335,7 @@ export function App() {
         book={selected}
         morph={morph}
         outcome={selected ? outcome.get(selected.stem) : undefined}
+        busy={busy}
         onDownload={() => selected && download([selected])}
         onClose={close}
       />
@@ -515,7 +546,7 @@ function Intake({
       e.preventDefault()
       depth = 0
       setPageOver(false)
-      onStart(await namesFromDrop(e))
+      onStart(await intakeFromDrop(e))
     }
     window.addEventListener('dragenter', enter)
     window.addEventListener('dragleave', leave)
@@ -541,7 +572,18 @@ function Intake({
     setOver(false)
     setPageOver(false)
     setAim({ x: 0.5, y: 0.5 })
-    onStart(await namesFromDrop(event))
+    onStart(await intakeFromDrop(event))
+  }
+
+  // The folder picker that hands back a writable handle, where the browser has
+  // one; the plain directory input elsewhere.
+  async function chooseFolder() {
+    if (!canWriteInPlace) {
+      folderInput.current?.click()
+      return
+    }
+    const picked = await intakeFromPicker()
+    if (picked) onStart(picked)
   }
 
   function track(event: DragEvent<HTMLDivElement>) {
@@ -591,7 +633,7 @@ function Intake({
             <button className="bp-button" onClick={() => fileInput.current?.click()}>
               Choose files
             </button>
-            <button className="bp-button" onClick={() => folderInput.current?.click()}>
+            <button className="bp-button" onClick={() => void chooseFolder()}>
               Choose a folder
             </button>
           </div>
@@ -604,7 +646,7 @@ function Intake({
             multiple
             accept=".epub,.pdf"
             className="sr-only"
-            onChange={(e) => onStart(namesFromFileList(e.target.files))}
+            onChange={(e) => onStart(intakeFromFileList(e.target.files))}
           />
           <input
             ref={folderInput}
@@ -612,7 +654,7 @@ function Intake({
             // @ts-expect-error webkitdirectory is not in the React types yet
             webkitdirectory=""
             className="sr-only"
-            onChange={(e) => onStart(namesFromFileList(e.target.files))}
+            onChange={(e) => onStart(intakeFromFileList(e.target.files))}
           />
         </div>
       </motion.div>
@@ -1038,8 +1080,6 @@ function Results({
   )
 }
 
-type Outcome = 'written' | 'downloaded'
-
 // The gains column once a file has gone out: a drawn check and the outcome
 // replace the field list, which now lives in the file itself.
 function Gains({
@@ -1207,6 +1247,10 @@ function Tick({
 function Actions({
   counts,
   done,
+  busy,
+  canWrite,
+  trouble,
+  unavailable,
   onDownload,
   onWrite,
   onReset,
@@ -1214,26 +1258,34 @@ function Actions({
 }: {
   counts: { picked: number; allWrites: boolean }
   done: boolean
+  // A repair is in flight: the buttons wait rather than start a second one.
+  busy: boolean
+  // Every picked file came with a handle the browser can write through.
+  canWrite: boolean
+  trouble: string[]
+  unavailable: SourceName[]
   onDownload: () => void
   onWrite: () => void
   onReset: () => void
   onStop: () => void
 }) {
   const some = counts.allWrites ? '' : ' selected'
+  const idle = done && !busy && counts.picked > 0
   return (
     <section className="mt-8 grid gap-3 border-t border-[var(--bp-line-strong)] pt-6 md:flex md:flex-wrap md:items-center">
       <button
         className="bp-button w-full md:w-auto"
         data-primary="true"
-        disabled={!done || counts.picked === 0}
+        disabled={!idle}
         onClick={onDownload}
       >
-        Download{some}
+        {busy ? 'Working' : `Download${some}`}
       </button>
       {canWriteInPlace && (
         <button
           className="bp-button w-full md:w-auto"
-          disabled={!done || counts.picked === 0}
+          disabled={!idle || !canWrite}
+          title={canWrite ? undefined : 'Choose or drop a folder to write back into it.'}
           onClick={onWrite}
         >
           Write{some} into the folder
@@ -1247,6 +1299,17 @@ function Actions({
         <button className="bp-button w-full md:ml-auto md:w-auto" onClick={onStop}>
           Stop
         </button>
+      )}
+      {trouble.length > 0 && (
+        <p className="bp-mono w-full text-xs text-[var(--bp-cyan)]" role="status">
+          Not placed: {trouble.join('; ')}
+        </p>
+      )}
+      {unavailable.length > 0 && (
+        <p className="bp-mono w-full text-xs text-[var(--bp-cyan)]" role="status">
+          {unavailable.map((s) => SOURCE_LABEL[s]).join(' and ')} could not be reached and{' '}
+          {unavailable.length === 1 ? 'was' : 'were'} left out for the rest of the run.
+        </p>
       )}
       <p className="bp-mono w-full text-xs text-[var(--bp-muted)]">
         Dry run by default. Only HIGH verdicts are written, only missing fields are filled, and no
@@ -1263,12 +1326,15 @@ function Detail({
   book,
   morph,
   outcome,
+  busy,
   onDownload,
   onClose,
 }: {
   book: BookResult | null
   morph: boolean
   outcome: Outcome | undefined
+  // A repair is already running from the actions bar; one at a time.
+  busy: boolean
   onDownload: () => void
   onClose: () => void
 }) {
@@ -1384,7 +1450,12 @@ function Detail({
                       {outcome}
                     </p>
                   ) : (
-                    <button className="bp-button mt-8" data-primary="true" onClick={onDownload}>
+                    <button
+                      className="bp-button mt-8"
+                      data-primary="true"
+                      disabled={busy}
+                      onClick={onDownload}
+                    >
                       Download this file
                     </button>
                   ))}

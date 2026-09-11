@@ -1,0 +1,2 @@
+# The one runtime dependency, pinned by hash so the site ships exactly what was tested.
+pypdf==6.18.0 --hash=sha256:05b762b77bcb9dcb4a7c91fcf5dded585b25bee7269ab3d3001d7c55fa1b324b
