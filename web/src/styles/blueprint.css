@@ -1,0 +1,663 @@
+/* Blueprint: the mark's own world. Navy sheet, drafting grid, cyan hairlines. */
+
+:root {
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-display: 'Chakra Petch', var(--font-body);
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --bp-navy: #001a46;
+  --bp-deep: #000f2c;
+  --bp-ink: #eef2ff;
+  --bp-muted: #a7b6d9;
+  --bp-line: rgba(53, 198, 255, 0.16);
+  --bp-line-strong: rgba(53, 198, 255, 0.45);
+  --bp-cyan: #35c6ff;
+  --bp-electric: #0068f0;
+  --bp-steel: #8fa6d6;
+
+  /* shadcn tokens, so the dialog and progress bar sit on the sheet */
+  --background: var(--bp-navy);
+  --foreground: var(--bp-ink);
+  --card: var(--bp-deep);
+  --card-foreground: var(--bp-ink);
+  --popover: var(--bp-deep);
+  --popover-foreground: var(--bp-ink);
+  --primary: var(--bp-cyan);
+  --primary-foreground: var(--bp-deep);
+  --muted: rgba(53, 198, 255, 0.08);
+  --muted-foreground: var(--bp-muted);
+  --border: var(--bp-line);
+  --input: var(--bp-line);
+  --ring: var(--bp-cyan);
+  --radius: 2px;
+}
+
+html {
+  background: var(--bp-navy);
+  color: var(--bp-ink);
+  font-family: var(--font-body);
+}
+
+.bp-sheet {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  background: var(--bp-navy);
+}
+
+/* The drafting grid lives on its own fixed layer, faint, and fades out under
+   the reading column so text never has to compete with it. */
+.bp-sheet::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(53, 198, 255, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(53, 198, 255, 0.14) 1px, transparent 1px),
+    linear-gradient(rgba(53, 198, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(53, 198, 255, 0.05) 1px, transparent 1px);
+  background-size:
+    160px 160px,
+    160px 160px,
+    32px 32px,
+    32px 32px;
+  background-position: -1px -1px;
+  mask-image: radial-gradient(
+    ellipse 70% 60% at 50% 40%,
+    transparent 0%,
+    rgba(0, 0, 0, 0.35) 55%,
+    black 100%
+  );
+  animation: bp-grid-draw 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* A soft cyan glow from the top edge, like light on a light table. */
+.bp-sheet::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* Electric blue, radiating from the corner where the mark sits. */
+  background: radial-gradient(ellipse 55% 45% at 12% 8%, rgba(0, 104, 240, 0.28), transparent 70%);
+}
+
+@keyframes bp-grid-draw {
+  from {
+    background-size:
+      160px 0,
+      0 160px,
+      32px 0,
+      0 32px;
+  }
+}
+
+.bp-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+}
+.bp-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* An opaque working surface: anything with rows of text sits on one. */
+.bp-panel {
+  background: var(--bp-deep);
+  border: 1px solid var(--bp-line-strong);
+}
+
+/* Corner brackets on the intake panel; they tighten when a file is over it. */
+.bp-brackets {
+  --gap: 14px;
+  position: relative;
+}
+.bp-brackets::before,
+.bp-brackets::after,
+.bp-brackets > .bp-corner::before,
+.bp-brackets > .bp-corner::after {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--bp-cyan);
+  transition: inset 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: bp-bracket-draw 400ms cubic-bezier(0.2, 0.8, 0.2, 1) 550ms both;
+}
+@keyframes bp-bracket-draw {
+  from {
+    width: 0;
+    height: 0;
+    opacity: 0;
+  }
+}
+.bp-brackets::before {
+  top: calc(-1 * var(--gap));
+  left: calc(-1 * var(--gap));
+  border-right: 0;
+  border-bottom: 0;
+}
+.bp-brackets::after {
+  top: calc(-1 * var(--gap));
+  right: calc(-1 * var(--gap));
+  border-left: 0;
+  border-bottom: 0;
+}
+.bp-brackets > .bp-corner::before {
+  bottom: calc(-1 * var(--gap));
+  left: calc(-1 * var(--gap));
+  border-right: 0;
+  border-top: 0;
+}
+.bp-brackets > .bp-corner::after {
+  bottom: calc(-1 * var(--gap));
+  right: calc(-1 * var(--gap));
+  border-left: 0;
+  border-top: 0;
+}
+.bp-brackets[data-over='true'] {
+  --gap: 4px;
+}
+
+/* Dimension line under a heading, like a drawing's measurement. */
+.bp-dim {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--bp-cyan);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.bp-dim::before,
+.bp-dim::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--bp-line-strong);
+}
+.bp-dim::before {
+  flex: 0 0 24px;
+}
+
+.bp-stamp {
+  display: inline-block;
+  min-width: 4.5rem;
+  text-align: center;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--bp-muted);
+}
+.bp-stamp[data-verdict='HIGH'] {
+  color: var(--bp-cyan);
+}
+.bp-stamp[data-verdict='MED'] {
+  color: var(--bp-steel);
+}
+.bp-stamp[data-verdict='LOW'] {
+  color: var(--bp-steel);
+  border-style: dashed;
+}
+.bp-stamp[data-verdict='NONE'] {
+  border-style: dotted;
+}
+.bp-stamp[data-verdict='UNREADABLE'] {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+/* The progress ledger: one segment per book. */
+.bp-segment {
+  background: var(--bp-line);
+  transition: background-color 300ms;
+}
+.bp-segment[data-verdict='HIGH'] {
+  background: var(--bp-cyan);
+}
+.bp-segment[data-verdict='MED'] {
+  background: var(--bp-steel);
+}
+.bp-segment[data-verdict='LOW'] {
+  background: rgba(103, 128, 176, 0.45);
+}
+.bp-segment[data-verdict='NONE'],
+.bp-segment[data-verdict='UNREADABLE'] {
+  background: rgba(167, 182, 217, 0.25);
+}
+
+/* A row being inked: a cyan hairline sweeps across as the text is revealed. */
+.bp-row {
+  position: relative;
+}
+.bp-row[data-inking='true']::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--bp-cyan);
+  animation: bp-ink 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  pointer-events: none;
+}
+@keyframes bp-ink {
+  from {
+    left: 0;
+    opacity: 1;
+  }
+  to {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+.bp-target {
+  cursor: crosshair;
+}
+.bp-aim-line {
+  background: var(--bp-cyan);
+  opacity: 0;
+}
+.bp-aim-ring {
+  border: 1px solid var(--bp-line-strong);
+  transition: border-color 160ms;
+}
+.bp-aim-ring[data-live='true'] {
+  border-color: var(--bp-cyan);
+}
+
+.bp-link {
+  transition: color 160ms;
+}
+.bp-link:hover,
+.bp-link:focus-visible {
+  color: var(--bp-cyan);
+  outline: none;
+}
+
+/* Diagram strokes */
+.bp-wire {
+  stroke: var(--bp-cyan);
+  stroke-width: 1.5;
+  fill: none;
+  transition: stroke-width 150ms;
+}
+.bp-wire-dashed {
+  stroke: var(--bp-line-strong);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+  fill: none;
+  transition: stroke-width 150ms;
+}
+.bp-wire[data-active='true'],
+.bp-wire-dashed[data-active='true'] {
+  stroke-width: 3;
+}
+.bp-node {
+  fill: var(--bp-deep);
+  stroke: var(--bp-cyan);
+  stroke-width: 1.5;
+  transition: fill 150ms;
+}
+.bp-node-dim {
+  fill: var(--bp-deep);
+  stroke: var(--bp-line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  transition: fill 150ms;
+}
+g[data-active='true'] > .bp-node,
+g[data-active='true'] > .bp-node-dim {
+  fill: rgba(53, 198, 255, 0.12);
+}
+g:focus-visible > .bp-node,
+g:focus-visible > .bp-node-dim {
+  stroke: var(--bp-ink);
+}
+.bp-node-core {
+  fill: var(--bp-navy);
+  stroke: var(--bp-ink);
+  stroke-width: 1.5;
+}
+
+.bp-row {
+  border-top: 1px solid var(--bp-line);
+}
+.bp-row-button {
+  position: relative;
+}
+.bp-row-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--row-inset, 1rem));
+  width: 2px;
+  background: var(--bp-cyan);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+.bp-row-button:hover:not(:disabled)::before,
+.bp-row-button:focus-visible::before {
+  transform: scaleY(1);
+}
+.bp-row[data-flash='true'] > .bp-row-button::before {
+  animation: bp-flash 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes bp-flash {
+  0% {
+    transform: scaleY(0);
+  }
+  15%,
+  75% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
+}
+.bp-row-title {
+  transition: color 180ms;
+}
+
+/* Checkbox drawn like a drafted square: fills cyan, the tick strokes itself in. */
+.bp-tick {
+  display: inline-flex;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.bp-tick[data-disabled='true'] {
+  cursor: default;
+  opacity: 0.35;
+}
+.bp-tick[data-idle='true'] {
+  opacity: 0.5;
+}
+.bp-tick-box {
+  position: relative;
+  display: block;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--bp-line-strong);
+  background: transparent;
+  transition:
+    background-color 140ms,
+    border-color 140ms,
+    box-shadow 140ms;
+}
+.bp-tick:hover .bp-tick-box,
+.bp-tick input:focus-visible + .bp-tick-box {
+  border-color: var(--bp-cyan);
+}
+.bp-tick input:focus-visible + .bp-tick-box {
+  box-shadow:
+    0 0 0 2px var(--bp-navy),
+    0 0 0 3px var(--bp-cyan);
+}
+.bp-tick input:checked + .bp-tick-box {
+  background: var(--bp-cyan);
+  border-color: var(--bp-cyan);
+}
+.bp-tick-mark {
+  position: absolute;
+  inset: 0;
+  fill: none;
+  stroke: var(--bp-deep);
+  stroke-width: 2;
+  stroke-linecap: square;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.bp-tick input:checked + .bp-tick-box .bp-tick-mark {
+  stroke-dashoffset: 0;
+}
+.bp-tick-dash {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  right: 3px;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--bp-cyan);
+  opacity: 0;
+}
+.bp-tick input:indeterminate + .bp-tick-box .bp-tick-dash {
+  opacity: 1;
+}
+.bp-row-button:hover:not(:disabled) .bp-row-title,
+.bp-row-button:focus-visible .bp-row-title {
+  color: #fff;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* The detail dialog grows out of its row and back. Snapshots of different
+   shapes would otherwise stretch, so both cover the morphing box instead. */
+::view-transition-group(detail) {
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-image-pair(detail) {
+  overflow: clip;
+}
+::view-transition-old(detail),
+::view-transition-new(detail) {
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+::view-transition-old(detail-overlay),
+::view-transition-new(detail-overlay) {
+  animation-duration: 320ms;
+}
+
+.bp-cursor::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  margin-left: 6px;
+  background: var(--bp-cyan);
+  vertical-align: -2px;
+  animation: bp-blink 1s steps(2, start) infinite;
+}
+@keyframes bp-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.bp-button {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--bp-cyan);
+  color: var(--bp-cyan);
+  padding: 10px 18px;
+  transition:
+    background-color 160ms,
+    color 160ms,
+    transform 120ms,
+    box-shadow 120ms;
+}
+.bp-button:hover,
+.bp-button:focus-visible {
+  background: var(--bp-cyan);
+  color: var(--bp-deep);
+  outline: none;
+  transform: translate(-2px, -2px);
+  box-shadow: 2px 2px 0 var(--bp-electric);
+}
+.bp-button[data-primary='true'] {
+  background: var(--bp-electric);
+  border-color: var(--bp-electric);
+  color: #fff;
+}
+.bp-button[data-primary='true']:hover,
+.bp-button[data-primary='true']:focus-visible {
+  background: var(--bp-cyan);
+  border-color: var(--bp-cyan);
+  color: var(--bp-deep);
+}
+.bp-button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bp-sheet::before,
+  .bp-cursor::after,
+  .bp-brackets::before,
+  .bp-brackets::after,
+  .bp-brackets > .bp-corner::before,
+  .bp-brackets > .bp-corner::after,
+  .bp-row::after {
+    animation: none;
+  }
+  .bp-row-button::before,
+  .bp-row-title,
+  .bp-tick-box,
+  .bp-tick-mark {
+    transition: none;
+  }
+  .bp-row[data-flash='true'] > .bp-row-button::before {
+    animation: none;
+    transform: scaleY(1);
+  }
+  .bp-button:hover,
+  .bp-button:focus-visible {
+    transform: none;
+  }
+  .bp-brackets::before,
+  .bp-brackets::after,
+  .bp-brackets > .bp-corner::before,
+  .bp-brackets > .bp-corner::after {
+    transition: none;
+  }
+}
+
+/* The hero mark: the square export is navy on navy, so a radial mask dissolves
+   its edges into the sheet and only the drawing remains. */
+.bp-mark-image {
+  mask-image: radial-gradient(circle at 50% 50%, black 46%, transparent 72%);
+  filter: drop-shadow(0 0 28px rgba(0, 104, 240, 0.35));
+}
+
+.bp-cube {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: linear-gradient(210deg, rgba(53, 198, 255, 0.9), rgba(0, 104, 240, 0.9));
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  opacity: 0.85;
+  animation: bp-drift 9s ease-in-out infinite;
+}
+@keyframes bp-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(6px, -12px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bp-cube {
+    animation: none;
+  }
+}
+
+/* The sticky bar: transparent at the top of the page, then a translucent navy
+   with a hairline once the page scrolls under it. */
+.bp-bar {
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition:
+    background-color 200ms,
+    border-color 200ms,
+    backdrop-filter 200ms;
+}
+.bp-bar[data-scrolled='true'] {
+  background: rgba(0, 26, 70, 0.82);
+  border-bottom-color: var(--bp-line);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Pencil sketches: draw in over the first third of the cycle, hold, rub out. */
+.bp-sketches {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mask-image: radial-gradient(
+    ellipse 60% 55% at 50% 45%,
+    transparent 0%,
+    rgba(0, 0, 0, 0.4) 60%,
+    black 100%
+  );
+}
+.bp-sketches path {
+  fill: none;
+  stroke: rgba(238, 242, 255, 0.34);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: bp-sketch 14s linear infinite;
+  animation-duration: inherit;
+  animation-delay: inherit;
+}
+.bp-sketches .bp-sketch-second {
+  stroke: rgba(238, 242, 255, 0.18);
+  stroke-width: 1;
+}
+@keyframes bp-sketch {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  11% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  24% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  31% {
+    stroke-dashoffset: -1;
+    opacity: 0.6;
+  }
+  33.3%,
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bp-sketches path {
+    animation: none;
+    stroke-dashoffset: 0;
+    stroke: rgba(238, 242, 255, 0.14);
+  }
+}
