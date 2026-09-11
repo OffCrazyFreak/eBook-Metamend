@@ -130,15 +130,12 @@ export const MOCK_BOOKS: BookResult[] = [
     gains: {},
   }),
   build({
-    stem: 'Corin Ashby - The Emberwake Cycle - 01 - The Last Kiln',
-    conf: 'HIGH',
-    scores: [
-      score('apple', 'The Last Kiln', 1.0, 1.0),
-      score('inventaire', 'The Last Kiln (The Emberwake Cycle, #1)', 0.95, 1.0),
-    ],
-    gains: { tags: TAGS.fantasy, series: 'The Emberwake Cycle' },
-    merged: { series: 'The Emberwake Cycle', sidx: '1' },
+    stem: 'Lena Faroe - The Sisters of Gull Rock',
+    conf: 'LOW',
+    scores: [score('inventaire', 'Gull Rock Lighthouse: A History', 0.42, 0.2)],
+    gains: {},
   }),
+  build({ stem: 'Osei Bright - Unlisted', none: true }),
   build({
     stem: 'Mira Solano - Ninety Days of Rain',
     conf: 'MED',
@@ -149,12 +146,15 @@ export const MOCK_BOOKS: BookResult[] = [
     gains: { tags: ['Fiction', 'Literary fiction'] },
   }),
   build({
-    stem: 'Lena Faroe - The Sisters of Gull Rock',
-    conf: 'LOW',
-    scores: [score('inventaire', 'Gull Rock Lighthouse: A History', 0.42, 0.2)],
-    gains: {},
+    stem: 'Corin Ashby - The Emberwake Cycle - 01 - The Last Kiln',
+    conf: 'HIGH',
+    scores: [
+      score('apple', 'The Last Kiln', 1.0, 1.0),
+      score('inventaire', 'The Last Kiln (The Emberwake Cycle, #1)', 0.95, 1.0),
+    ],
+    gains: { tags: TAGS.fantasy, series: 'The Emberwake Cycle' },
+    merged: { series: 'The Emberwake Cycle', sidx: '1' },
   }),
-  build({ stem: 'Osei Bright - Unlisted', none: true }),
   build({
     stem: 'Yusuf Adler - Broken Archive',
     files: ['.epub'],

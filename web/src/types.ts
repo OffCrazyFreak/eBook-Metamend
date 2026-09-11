@@ -71,6 +71,8 @@ export interface BookResult {
   files: Extension[]
   facts: FilenameFacts
   status: BookStatus
+  // Catalogues that have replied so far while the book is being queried.
+  answered?: SourceName[]
   // null once done means no source answered.
   proposal: Proposal | null
 }
@@ -79,6 +81,7 @@ export type RunEvent =
   | { type: 'loading'; progress: number; label: string }
   | { type: 'ready'; books: BookResult[] }
   | { type: 'querying'; stem: string }
+  | { type: 'answer'; stem: string; source: SourceName }
   | { type: 'book'; result: BookResult }
   | { type: 'done'; elapsedMs: number }
 

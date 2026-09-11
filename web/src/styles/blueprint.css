@@ -318,6 +318,53 @@ g:focus-visible > .bp-node-dim {
 .bp-row {
   border-top: 1px solid var(--bp-line);
 }
+.bp-row-button {
+  position: relative;
+}
+.bp-row-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--row-inset, 1rem));
+  width: 2px;
+  background: var(--bp-cyan);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+.bp-row-button:hover:not(:disabled)::before,
+.bp-row-button:focus-visible::before {
+  transform: scaleY(1);
+}
+.bp-row-title {
+  transition: color 180ms;
+}
+.bp-row-button:hover:not(:disabled) .bp-row-title,
+.bp-row-button:focus-visible .bp-row-title {
+  color: #fff;
+}
+
+/* The detail dialog grows out of its row and back. Snapshots of different
+   shapes would otherwise stretch, so both cover the morphing box instead. */
+::view-transition-group(detail) {
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-image-pair(detail) {
+  overflow: clip;
+}
+::view-transition-old(detail),
+::view-transition-new(detail) {
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+::view-transition-old(detail-overlay),
+::view-transition-new(detail-overlay) {
+  animation-duration: 320ms;
+}
 
 .bp-cursor::after {
   content: '';
@@ -381,6 +428,10 @@ g:focus-visible > .bp-node-dim {
   .bp-brackets > .bp-corner::after,
   .bp-row::after {
     animation: none;
+  }
+  .bp-row-button::before,
+  .bp-row-title {
+    transition: none;
   }
   .bp-button:hover,
   .bp-button:focus-visible {

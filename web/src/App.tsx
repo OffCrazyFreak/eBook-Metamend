@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { flushSync } from 'react-dom'
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react'
 
 import mark from '../../assets/brand/icon/icon-square-512.png'
@@ -31,7 +32,33 @@ const EASE = [0.2, 0.8, 0.2, 1] as const
 export function App() {
   const { state, start, reset } = useRun()
   const [selected, setSelected] = useState<BookResult | null>(null)
+  const [origin, setOrigin] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'writes'>('all')
+  const reduced = useReducedMotion()
+  const morph = !reduced && typeof document.startViewTransition === 'function'
+
+  // The dialog grows out of the clicked row and shrinks back into it. The row
+  // must carry the transition name before the old snapshot is taken, and the
+  // dialog must be in the DOM before the new one is, hence the flushSync pairs.
+  const open = useCallback(
+    (book: BookResult) => {
+      if (!morph) {
+        setSelected(book)
+        return
+      }
+      flushSync(() => setOrigin(book.stem))
+      document.startViewTransition(() => flushSync(() => setSelected(book)))
+    },
+    [morph],
+  )
+  const close = useCallback(() => {
+    if (!morph) {
+      setSelected(null)
+      return
+    }
+    const transition = document.startViewTransition(() => flushSync(() => setSelected(null)))
+    transition.finished.finally(() => setOrigin(null))
+  }, [morph])
 
   const counts = useMemo(() => {
     const done = state.books.filter((b) => b.status === 'done')
@@ -71,7 +98,12 @@ export function App() {
                 filter={filter}
                 onFilter={setFilter}
               />
-              <Results books={visible} active={state.active} onSelect={setSelected} />
+              <Results
+                books={visible}
+                active={state.active}
+                origin={selected === null ? origin : null}
+                onSelect={open}
+              />
               <Actions counts={counts} done={state.phase === 'done'} onReset={reset} />
             </>
           )}
@@ -81,7 +113,7 @@ export function App() {
         </div>
       </LayoutGroup>
 
-      <Detail book={selected} onClose={() => setSelected(null)} />
+      <Detail book={selected} morph={morph} onClose={close} />
     </div>
   )
 }
@@ -434,15 +466,19 @@ function Summary({
 function Results({
   books,
   active,
+  origin,
   onSelect,
 }: {
   books: BookResult[]
   active: string | null
+  // The row the open dialog grew out of; it carries the view transition name
+  // until the dialog is up, and again while the dialog shrinks back into it.
+  origin: string | null
   onSelect: (b: BookResult) => void
 }) {
   const reduced = useReducedMotion()
   return (
-    <ol className="bp-panel mt-6 px-4 pt-3 md:px-6">
+    <ol className="bp-panel mt-6 px-4 pt-3 [--row-inset:1rem] md:px-6 md:[--row-inset:1.5rem]">
       <li className="bp-mono grid grid-cols-[2.5rem_1fr_auto] items-center gap-4 pb-3 text-xs tracking-wider text-[var(--bp-muted)] uppercase md:grid-cols-[2.5rem_1fr_10rem_7rem_8rem]">
         <span>no.</span>
         <span>file</span>
@@ -467,13 +503,14 @@ function Results({
               <button
                 disabled={!done}
                 onClick={() => onSelect(book)}
-                className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-3 text-left transition-colors hover:bg-[rgba(53,198,255,0.06)] focus-visible:bg-[rgba(53,198,255,0.1)] focus-visible:outline-none disabled:cursor-default md:grid-cols-[2.5rem_1fr_10rem_7rem_8rem]"
+                style={origin === book.stem ? { viewTransitionName: 'detail' } : undefined}
+                className="bp-row-button grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-3 text-left focus-visible:outline-none disabled:cursor-default md:grid-cols-[2.5rem_1fr_10rem_7rem_8rem]"
               >
                 <span className="bp-mono text-xs text-[var(--bp-muted)]">
                   {String(i + 1).padStart(2, '0')}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate">{book.facts.title}</span>
+                  <span className="bp-row-title block truncate">{book.facts.title}</span>
                   <span className="block truncate text-sm text-[var(--bp-muted)]">
                     {book.facts.author}
                     {book.facts.series && ` · ${book.facts.series} ${book.facts.series_index}`}
@@ -482,11 +519,27 @@ function Results({
                       · {book.files.map((f) => f.slice(1)).join(' + ')}
                     </span>
                   </span>
+                  {done && book.proposal && (
+                    <span className="bp-mono block truncate text-xs text-[var(--bp-muted)] md:hidden">
+                      gains: {Object.keys(book.proposal.gains).join(', ') || 'none'}
+                    </span>
+                  )}
                 </span>
                 <span className="bp-mono hidden text-xs text-[var(--bp-muted)] md:block">
-                  {done && book.proposal
-                    ? book.proposal.sources.map((s) => SOURCE_LABEL[s].split(' ')[0]).join(', ')
-                    : ''}
+                  {(done ? (book.proposal?.sources ?? []) : (book.answered ?? [])).map(
+                    (s, n, all) => (
+                      <motion.span
+                        key={s}
+                        className="inline-block"
+                        initial={reduced || done ? false : { opacity: 0, x: -8, color: '#35c6ff' }}
+                        animate={{ opacity: 1, x: 0, color: '#a7b6d9' }}
+                        transition={{ duration: 0.5, ease: EASE, color: { duration: 0.9 } }}
+                      >
+                        {SOURCE_LABEL[s].split(' ')[0]}
+                        {n < all.length - 1 ? ',\u00a0' : ''}
+                      </motion.span>
+                    ),
+                  )}
                 </span>
                 <span className="bp-mono hidden text-xs text-[var(--bp-muted)] md:block">
                   {done && book.proposal
@@ -531,16 +584,20 @@ function Actions({
   onReset: () => void
 }) {
   return (
-    <section className="mt-8 flex flex-wrap items-center gap-3 border-t border-[var(--bp-line-strong)] pt-6">
-      <button className="bp-button" data-primary="true" disabled={!done || counts.writes === 0}>
+    <section className="mt-8 grid gap-3 border-t border-[var(--bp-line-strong)] pt-6 md:flex md:flex-wrap md:items-center">
+      <button
+        className="bp-button w-full md:w-auto"
+        data-primary="true"
+        disabled={!done || counts.writes === 0}
+      >
         Download {counts.writes} repaired {counts.writes === 1 ? 'file' : 'files'}
       </button>
       {canWriteInPlace && (
-        <button className="bp-button" disabled={!done || counts.writes === 0}>
+        <button className="bp-button w-full md:w-auto" disabled={!done || counts.writes === 0}>
           Write into the folder
         </button>
       )}
-      <button className="bp-button ml-auto" onClick={onReset}>
+      <button className="bp-button w-full md:ml-auto md:w-auto" onClick={onReset}>
         Start over
       </button>
       <p className="bp-mono w-full text-xs text-[var(--bp-muted)]">
@@ -554,11 +611,26 @@ function Actions({
   )
 }
 
-function Detail({ book, onClose }: { book: BookResult | null; onClose: () => void }) {
+function Detail({
+  book,
+  morph,
+  onClose,
+}: {
+  book: BookResult | null
+  morph: boolean
+  onClose: () => void
+}) {
   const p = book?.proposal ?? null
   return (
     <Dialog open={book !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto border-[var(--bp-line-strong)] bg-[var(--bp-deep)] p-0 text-[var(--bp-ink)] sm:max-w-2xl">
+      <DialogContent
+        // The view transition owns the entrance, so the stock zoom is switched off.
+        style={morph ? { viewTransitionName: 'detail', animation: 'none' } : undefined}
+        overlayStyle={
+          morph ? { viewTransitionName: 'detail-overlay', animation: 'none' } : undefined
+        }
+        className="max-h-[90vh] max-w-2xl overflow-y-auto border-[var(--bp-line-strong)] bg-[var(--bp-deep)] p-0 text-[var(--bp-ink)] sm:max-w-2xl"
+      >
         {book && (
           <div className="p-6 md:p-8">
             <span className="bp-dim w-48">sheet detail</span>
@@ -863,14 +935,10 @@ function Agreement() {
 
 function Footer() {
   return (
-    <footer className="bp-mono mt-14 flex flex-wrap gap-x-8 gap-y-2 border-t border-[var(--bp-line)] pt-5 text-[11px] tracking-wider text-[var(--bp-muted)] uppercase md:mt-20">
-      <span>Files stay in this tab.</span>
-      <span>
-        Apple Books, Open Library and Inventaire receive the title and author from the filename,
-        nothing else.
-      </span>
-      <a className="bp-link" href="https://github.com/OffCrazyFreak/eBook-Metamend">
-        Source on GitHub
+    <footer className="bp-mono mt-14 flex flex-wrap gap-x-6 gap-y-2 border-t border-[var(--bp-line)] pt-5 text-xs text-[var(--bp-muted)] md:mt-20">
+      <span>Files never leave this tab.</span>
+      <a className="bp-link ml-auto" href="https://github.com/OffCrazyFreak/eBook-Metamend">
+        GitHub
       </a>
       <span>MIT licence</span>
     </footer>

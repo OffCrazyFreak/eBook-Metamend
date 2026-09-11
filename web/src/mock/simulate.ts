@@ -21,7 +21,7 @@ export function simulateRun(
   options: { books?: BookResult[]; perBookMs?: number; loadingMs?: number } = {},
 ): Simulation {
   const books = (options.books ?? MOCK_BOOKS).map((b) => ({ ...b, status: 'pending' as const }))
-  const perBook = options.perBookMs ?? 420
+  const perBook = options.perBookMs ?? 600
   const loadingMs = options.loadingMs ?? 1800
   const timers: number[] = []
   const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms))
@@ -39,6 +39,12 @@ export function simulateRun(
   books.forEach((book, i) => {
     const start = loadingMs + 200 + i * perBook
     at(start, () => onEvent({ type: 'querying', stem: book.stem }))
+    const sources = book.proposal?.sources ?? []
+    sources.forEach((source, n) => {
+      at(start + (perBook * 0.8 * (n + 1)) / (sources.length + 1), () =>
+        onEvent({ type: 'answer', stem: book.stem, source }),
+      )
+    })
     at(start + perBook * 0.8, () => onEvent({ type: 'book', result: { ...book, status: 'done' } }))
   })
   const end = loadingMs + 200 + books.length * perBook
@@ -54,6 +60,10 @@ export function applyEvent(list: BookResult[], event: RunEvent): BookResult[] {
       return event.books
     case 'querying':
       return list.map((b) => (b.stem === event.stem ? { ...b, status: 'querying' } : b))
+    case 'answer':
+      return list.map((b) =>
+        b.stem === event.stem ? { ...b, answered: [...(b.answered ?? []), event.source] } : b,
+      )
     case 'book':
       return list.map((b) => (b.stem === event.result.stem ? event.result : b))
     default:

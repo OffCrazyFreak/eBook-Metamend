@@ -42,6 +42,7 @@ export function useRun(options: { perBookMs?: number; loadingMs?: number } = {})
         case 'ready':
           return { ...prev, phase: 'running', books }
         case 'querying':
+        case 'answer':
           return { ...prev, books, active: event.stem }
         case 'book':
           return { ...prev, books, active: prev.active === event.result.stem ? null : prev.active }
