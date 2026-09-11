@@ -58,9 +58,9 @@ def parse_root(root: ET.Element, *, bare_isbn_fallback: bool = False) -> dict[st
         scheme = (element.get(OPF + 'scheme') or element.get('scheme') or '').lower()
         # Three spellings of the same thing: Calibre's isbn:, EPUB 3's urn:isbn:
         # and EPUB 2's scheme attribute with a bare number.
-        if lowered.startswith('urn:isbn:'):
+        if lowered.startswith('urn:isbn:') and text.split(':', 2)[2]:
             record['isbn'] = text.split(':', 2)[2]
-        elif lowered.startswith('isbn:'):
+        elif lowered.startswith('isbn:') and text.split(':', 1)[1]:
             record['isbn'] = text.split(':', 1)[1]
         elif scheme == 'isbn' and text:
             record['isbn'] = text

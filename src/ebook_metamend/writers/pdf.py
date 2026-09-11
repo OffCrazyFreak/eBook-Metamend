@@ -16,6 +16,7 @@ cross-reference table pypdf cannot follow gets a full rewrite instead.
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from typing import Any
 from xml.dom import minidom
@@ -179,6 +180,11 @@ def _set_isbn(xmp: XmpInformation, isbn: str) -> None:
     if bag is None:
         bag = doc.createElementNS(RDF_NS, 'rdf:Bag')
         ident.appendChild(bag)
+    # read() takes the first isbn entry, so a stale one must not stay in front.
+    for old in list(bag.getElementsByTagNameNS(RDF_NS, 'li')):
+        schemes = old.getElementsByTagNameNS(XMPIDQ_NS, 'Scheme')
+        if any(_text(s) == 'isbn' for s in schemes):
+            bag.removeChild(old)
     li = doc.createElementNS(RDF_NS, 'rdf:li')
     li.setAttributeNS(RDF_NS, 'rdf:parseType', 'Resource')
     scheme = doc.createElementNS(XMPIDQ_NS, 'xmpidq:Scheme')
@@ -236,12 +242,13 @@ def write(path: str, gains: dict[str, Any], merged: dict[str, Any]) -> tuple[boo
     with open(path, 'rb') as fh:
         original = fh.read()
     incremental = True
+    tmp = None
     try:
-        writer = PdfWriter(path, incremental=True)
-    except PdfReadError:
-        incremental = False
-        writer = PdfWriter(clone_from=path)
-    try:
+        try:
+            writer = PdfWriter(path, incremental=True)
+        except PdfReadError:
+            incremental = False
+            writer = PdfWriter(clone_from=path)
         _apply(writer, gains, merged)
         pages = len(writer.pages)
         fd, tmp = tempfile.mkstemp(suffix='.pdf', dir=os.path.dirname(path) or '.')
@@ -254,11 +261,14 @@ def write(path: str, gains: dict[str, Any], merged: dict[str, Any]) -> tuple[boo
             with open(tmp, 'rb') as fh:
                 if fh.read(len(original)) != original:
                     raise ValueError('incremental write did not keep the original bytes')
+        # mkstemp creates 0600; the book keeps whatever access it had.
+        shutil.copymode(path, tmp)
         os.replace(tmp, path)
     except Exception as error:  # noqa: BLE001 - the reason goes back to the caller
-        try:
-            os.unlink(tmp)
-        except (OSError, NameError):
-            pass
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
         return False, f'{type(error).__name__}: {error}'
     return True, '' if incremental else 'rewritten'

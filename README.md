@@ -67,7 +67,7 @@ Options: `--apply`, `--match`, `--limit`, `--start`, `--out`, `--include-low`.
 ## Tech stack
 
 - **Language:** Python 3.10+, `src/` layout, standard library plus [pypdf](https://pypdf.readthedocs.io/) (`urllib`, `xml.etree`, `difflib`, `argparse`, `zipfile`)
-- **Metadata I/O:** native. EPUBs are edited inside the zip with only the OPF replaced; PDFs get an incremental update through pypdf, so the original bytes stay a prefix of the file
+- **Metadata I/O:** native. EPUBs are edited inside the zip with only the OPF replaced; PDFs get an incremental update through pypdf, so the original bytes stay a prefix of the file; a PDF whose cross-reference chain pypdf cannot follow is rewritten in full instead, and the run reports which happened
 - **Sources:** Kobo and Google Books via [Calibre](https://calibre-ebook.com/) plugins, Open Library via its public search API
 - **Tooling:** ruff, pytest, GitHub Actions. CI enforces that nothing beyond pypdf is imported
 

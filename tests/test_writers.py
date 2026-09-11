@@ -5,6 +5,7 @@ and stored, a PDF gains an incremental section rather than a rewrite, and both
 read back through the tool's own readers with exactly the gains added.
 """
 
+import os
 import zipfile
 
 import pytest
@@ -107,6 +108,13 @@ class TestEpubWriter:
         assert epub.write(str(path), {}, {}) == (True, '')
         assert path.read_bytes() == before
 
+    def test_the_file_keeps_its_permissions(self, tmp_path):
+        path = tmp_path / 'book.epub'
+        make_epub(path)
+        os.chmod(path, 0o664)
+        assert epub.write(str(path), {'publisher': 'P'}, {}) == (True, '')
+        assert oct(path.stat().st_mode & 0o777) == oct(0o664)
+
     def test_a_broken_archive_is_reported_not_replaced(self, tmp_path):
         path = tmp_path / 'book.epub'
         path.write_bytes(b'not a zip')
@@ -171,6 +179,38 @@ class TestPdfWriter:
         assert (ok, reason) == (True, 'rewritten')
         assert pdf.read(str(path))['publisher'] == 'P'
         assert len(PdfReader(str(path)).pages) == 1
+
+    def test_a_file_pypdf_cannot_open_at_all_is_reported_not_raised(self, tmp_path, monkeypatch):
+        """One bad book must not abort the run for the rest."""
+        path = tmp_path / 'book.pdf'
+        make_pdf(path)
+        before = path.read_bytes()
+
+        def refuse(*args, **kwargs):
+            raise pdf.PdfReadError('staged: unreadable either way')
+
+        monkeypatch.setattr(pdf, 'PdfWriter', refuse)
+        ok, reason = pdf.write(str(path), {'publisher': 'P'}, {})
+        assert ok is False and 'PdfReadError' in reason
+        assert path.read_bytes() == before
+        assert list(tmp_path.iterdir()) == [path]
+
+    def test_a_second_isbn_replaces_the_first(self, tmp_path):
+        """read() takes the first isbn entry; a stale one in front would make
+        the write report success while the book still says the old number."""
+        path = tmp_path / 'book.pdf'
+        make_pdf(path)
+        pdf.write(str(path), {'isbn': '9781940000012'}, {})
+        pdf.write(str(path), {'isbn': '9781940000029'}, {})
+        assert pdf.read(str(path))['isbn'] == '9781940000029'
+
+    def test_the_file_keeps_its_permissions(self, tmp_path):
+        """mkstemp creates 0600, which would lock other users out of a shared book."""
+        path = tmp_path / 'book.pdf'
+        make_pdf(path)
+        os.chmod(path, 0o664)
+        assert pdf.write(str(path), {'publisher': 'P'}, {}) == (True, '')
+        assert oct(path.stat().st_mode & 0o777) == oct(0o664)
 
     def test_an_unreadable_file_is_none_not_empty(self, tmp_path):
         path = tmp_path / 'book.pdf'

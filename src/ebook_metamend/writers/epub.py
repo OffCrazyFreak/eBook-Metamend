@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import shutil
 import tempfile
 import zipfile
 from typing import Any
@@ -122,6 +123,8 @@ def write(path: str, gains: dict[str, Any], merged: dict[str, Any]) -> tuple[boo
         for field in ('title', 'description', 'publisher', 'isbn'):
             if field in gains and after.get(field) != gains[field]:
                 raise ValueError(f'{field} did not read back')
+        # mkstemp creates 0600; the book keeps whatever access it had.
+        shutil.copymode(path, tmp)
         os.replace(tmp, path)
     except Exception as error:  # noqa: BLE001 - the reason goes back to the caller
         if tmp:
