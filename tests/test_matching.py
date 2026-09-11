@@ -45,6 +45,14 @@ class TestNorm:
             ('  Messy   Spacing  ', 'messy spacing'),
             ('', ''),
             (None, ''),
+            # Letters of every script survive; the ASCII-only version emptied these.
+            ('Война и мир', 'воина и мир'),
+            ('Ο Ξένος', 'ο ξενοσ'),
+            ('ノルウェイの森', 'ノルウェイの森'),
+            # Accents fold rather than vanish, so the letter under them stays.
+            ('Café', 'cafe'),
+            ('Straße', 'strasse'),
+            ('snake_case', 'snake case'),
         ],
     )
     def test_normalises(self, raw, expected):
@@ -67,6 +75,30 @@ class TestSim:
 
     def test_unrelated_titles_score_below_the_weak_threshold(self):
         assert sim('Atomic Habits', 'War and Peace') < TITLE_WEAK
+
+    @pytest.mark.parametrize(
+        'title', ['Война и мир', 'Ο Ξένος', 'ノルウェイの森', 'Les Misérables', 'Brontë']
+    )
+    def test_a_title_in_any_script_matches_itself(self, title):
+        assert sim(title, title) == 1.0
+
+    @pytest.mark.parametrize(
+        ('accented', 'plain'),
+        [('Émile', 'Emile'), ('Café', 'Cafe'), ('Brontë', 'Bronte'), ('Straße', 'Strasse')],
+    )
+    def test_accented_and_plain_spellings_are_the_same_title(self, accented, plain):
+        assert sim(accented, plain) == 1.0
+
+    @pytest.mark.parametrize(
+        ('one', 'other'),
+        [
+            ('Война и мир', 'Анна Каренина'),
+            ('Ο Ξένος', 'Η Πανούκλα'),
+            ('ノルウェイの森', '海辺のカフカ'),
+        ],
+    )
+    def test_unrelated_titles_in_other_scripts_stay_below_the_weak_threshold(self, one, other):
+        assert sim(one, other) < TITLE_WEAK
 
     @pytest.mark.parametrize(
         ('short', 'full'),

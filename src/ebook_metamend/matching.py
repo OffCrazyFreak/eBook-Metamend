@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import difflib
 import re
+import unicodedata
 from dataclasses import dataclass
 
 # Scoring thresholds. Named because they were repeated as bare numbers in four
@@ -151,9 +152,18 @@ def junky(title: str | None) -> bool:
 
 
 def norm(s: str | None) -> str:
-    """Lowercase, spell out % and &, drop punctuation and leading articles."""
-    s = (s or '').lower().replace('%', ' percent ').replace('&', ' and ')
-    s = re.sub(r'[^a-z0-9 ]', ' ', s)
+    """Casefold, strip accents, spell out % and &, drop punctuation and articles.
+
+    Letters of every script survive. The ASCII-only version turned a Cyrillic,
+    Greek or CJK title into an empty string that scored 0.0 against itself, and
+    it dropped accented letters, so "Straße" against "Strasse" scored 0.77 and
+    "Café" against "Cafe" was two different titles. Accents are folded rather
+    than kept because catalogues are inconsistent about them for the same book.
+    """
+    s = unicodedata.normalize('NFKD', (s or '').casefold())
+    s = ''.join(c for c in s if not unicodedata.combining(c))
+    s = s.replace('%', ' percent ').replace('&', ' and ')
+    s = re.sub(r'[^\w ]|_', ' ', s)
     s = re.sub(r'^(the|a|an)\b', ' ', s)
     return re.sub(r'\s+', ' ', s).strip()
 
