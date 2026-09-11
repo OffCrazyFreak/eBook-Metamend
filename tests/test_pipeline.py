@@ -39,6 +39,32 @@ class TestOnlyTheSourcesThatAgreedMayContribute:
         assert enrich.trusted_names(scores) == []
 
 
+class TestTheReportedFiguresDescribeTheTrustedSources:
+    def test_an_excluded_answer_does_not_set_the_figures(self):
+        scores = [
+            score('kobo', 'Foundation', 0.9, 0.8),
+            score('google', 'Foundation', 0.9, 0.8),
+            score('openlib', 'Foundation and Empire', 0.95, 1.0),
+        ]
+        assert enrich.reported_scores(scores, ['kobo', 'google']) == (0.9, 0.8)
+
+    def test_when_nothing_is_trusted_the_best_of_every_answer_is_kept(self):
+        scores = [score('google', 'On Liberty (Squashed Edition)', 0.55, 1.0)]
+        assert enrich.reported_scores(scores, []) == (0.55, 1.0)
+
+    def test_a_verdict_earned_outside_the_trusted_set_keeps_its_figures(self):
+        # The adaptation earns MED on its author and is barred from contributing;
+        # the weak survivor alone would print MED beside an author score of 0.
+        scores = [
+            score('google', 'On Liberty (Squashed Edition)', 0.7, 1.0),
+            score('openlib', 'Liberty', 0.6, 0.0),
+        ]
+        assert enrich.reported_scores(scores, ['openlib']) == (0.7, 1.0)
+
+    def test_no_answers_at_all_read_as_zero(self):
+        assert enrich.reported_scores([], []) == (0.0, 0.0)
+
+
 class TestASequelCannotWinOnLength:
     """Reproduced live: Kobo and Google returned "Foundation", Open Library
     returned the sequel "Foundation and Empire" by the same author. A sequel is a

@@ -208,6 +208,31 @@ def trusted_names(scores: list[matching.SourceScore]) -> list[str]:
     ]
 
 
+def reported_scores(scores: list[matching.SourceScore], trusted: list[str]) -> tuple[float, float]:
+    """The one title and one author figure printed for a book.
+
+    They decide nothing; ``classify`` works per source. They are read next to the
+    source list, so they come from the same answers: the best of the trusted set.
+    Taken over every answer, a sequel that scored 0.95 and was then excluded for
+    agreeing with nobody still printed as ``fn=0.95`` beside sources it was not
+    among.
+
+    The trusted set is used only when it holds a strong source, because then it
+    is the set that earned the verdict. Otherwise every answer counts: a
+    recognised adaptation can earn MED on its author alone while being barred
+    from contributing, and figures taken from the weak survivors would print
+    ``MED au=0.00``; and when nothing survives at all, a rejected book still
+    shows how close it came rather than ``0.00``.
+    """
+    pool = [s for s in scores if s.name in trusted]
+    if not any(s.strong for s in pool):
+        pool = scores
+    return (
+        max((s.title_score for s in pool), default=0.0),
+        max((s.author_score for s in pool), default=0.0),
+    )
+
+
 def _ranked_tags(answers: list[dict[str, Any]]) -> list[str]:
     """Tags most sources agreed on first, then first seen.
 
@@ -388,12 +413,9 @@ def propose(
         return None
 
     scores, conf = score(answers, facts)
-    # Reported figures stay the best-of, so the output still reads as one number
-    # per book, but they no longer decide anything.
-    title_score = max((s.title_score for s in scores), default=0.0)
-    author_score = max((s.author_score for s in scores), default=0.0)
-
-    surviving = {name: answers[name] for name in trusted_names(scores)}
+    trusted = trusted_names(scores)
+    title_score, author_score = reported_scores(scores, trusted)
+    surviving = {name: answers[name] for name in trusted}
 
     # A failed read is not an empty book. Treating it as one makes every field
     # look missing, and --apply would then overwrite a title, publisher and tags
