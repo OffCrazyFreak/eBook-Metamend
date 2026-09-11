@@ -55,7 +55,8 @@ Ask first, and **ask means ask**, not quietly pick the smaller option:
 - `enrich.py`: the pipeline. Queries sources, scores, merges, computes gains, applies. Returns values.
 - `tags.py`: subject cleanup and the author-heading rewrite.
 - `sources/`: one module per source, each wrapped by `cache.py` so a run can be recorded and replayed offline.
-- `library.py`, `opf.py`, `calibre.py`, `config.py`: filename parsing and the library walk, OPF parsing, the Calibre wrappers, paths and environment.
+- `writers/`: `epub.py` rewrites only the OPF inside the zip, `pdf.py` appends an incremental update through pypdf. Both read the result back before replacing the original. Every write in the tool goes through these two; nothing else touches a book.
+- `library.py`, `opf.py`, `calibre.py`, `config.py`: filename parsing and the library walk, OPF parsing, the zip-level EPUB reader plus the Calibre plugin wrapper, paths and environment.
 - `epub_to_pdf.py`, `extract.py`: copy an EPUB's metadata onto its PDF twin; dump text for inspection.
 - `cli.py`: argument parsing and printing only. Library code returns, `cli.py` prints.
 - `tools/`: `snapshot.py` (the safety net for `--apply`) and `strip.py` (builds a test corpus). `snapshot.py` re-implements OPF resolution on purpose and must not import it from the package.

@@ -9,7 +9,7 @@
 
 **Web version:** [offcrazyfreak.github.io/eBook-Metamend](https://offcrazyfreak.github.io/eBook-Metamend/). Runs in the browser; files never leave it. The interface is in place and the Python wiring is next, so until then the page plays an invented sample.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB) ![Dependencies](https://img.shields.io/badge/dependencies-stdlib%20only-2ec50d) [![CI](https://github.com/OffCrazyFreak/eBook-Metamend/actions/workflows/ci.yml/badge.svg)](https://github.com/OffCrazyFreak/eBook-Metamend/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB) ![Dependencies](https://img.shields.io/badge/dependencies-pypdf%20only-2ec50d) [![CI](https://github.com/OffCrazyFreak/eBook-Metamend/actions/workflows/ci.yml/badge.svg)](https://github.com/OffCrazyFreak/eBook-Metamend/actions/workflows/ci.yml)
 
 ## The problem
 
@@ -66,12 +66,12 @@ Options: `--apply`, `--match`, `--limit`, `--start`, `--out`, `--include-low`.
 
 ## Tech stack
 
-- **Language:** Python 3.10+, standard library only, `src/` layout (`urllib`, `xml.etree`, `difflib`, `argparse`, `subprocess`, `zipfile`)
-- **Metadata I/O:** [Calibre](https://calibre-ebook.com/) command line tools, used as external processes
-- **Sources:** Kobo and Google Books via Calibre plugins, Open Library via its public search API
-- **Tooling:** ruff, pytest, GitHub Actions. CI enforces the no-dependencies promise
+- **Language:** Python 3.10+, `src/` layout, standard library plus [pypdf](https://pypdf.readthedocs.io/) (`urllib`, `xml.etree`, `difflib`, `argparse`, `zipfile`)
+- **Metadata I/O:** native. EPUBs are edited inside the zip with only the OPF replaced; PDFs get an incremental update through pypdf, so the original bytes stay a prefix of the file
+- **Sources:** Kobo and Google Books via [Calibre](https://calibre-ebook.com/) plugins, Open Library via its public search API
+- **Tooling:** ruff, pytest, GitHub Actions. CI enforces that nothing beyond pypdf is imported
 
-Calibre is used rather than a native Python library because it edits EPUB and PDF metadata **in place**. Libraries that rebuild the EPUB archive can drop the `mimetype` entry, reorder the manifest or lose XML namespaces.
+Metadata used to go through Calibre's `ebook-meta`, which edits in place but splits every tag on commas and rewrites the OPF wholesale. The native writers keep every other archive member byte for byte, keep `mimetype` first and stored, and store a tag exactly as given.
 
 ## The commands
 
@@ -90,8 +90,9 @@ src/ebook_metamend/
 ├── cli.py         argument parsing and printing only
 ├── library.py     finding books, reading what the filename claims
 ├── opf.py         one OPF parser
-├── calibre.py     ebook-meta and fetch-ebook-metadata wrappers
+├── calibre.py     the zip-level EPUB reader and the fetch-ebook-metadata wrapper
 ├── config.py      paths and the Calibre environment
+├── writers/       epub and pdf: read and write metadata in place
 └── sources/       kobo, google, openlibrary, and the record/replay cache
 tools/             snapshot, strip and replay harnesses for measuring a change
 ```
@@ -137,7 +138,7 @@ This is the reason for the whole design. A source that returns a plausible wrong
 
 ## Setup
 
-Python 3.10+ and Calibre, available as command line tools. No system install needed:
+Python 3.10+ with pypdf (installed with the package), and Calibre for the Kobo and Google Books sources. Calibre no longer touches the books themselves. No system install needed:
 
 ```bash
 CAL_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/ebook-metamend/calibre"
@@ -200,8 +201,7 @@ ebook-convert cleaned.epub out.pdf --paper-size letter
 
 Working, and used on a real library of a few hundred books. Packaged as a `src/` layout with tests. Known rough edges, kept honest:
 
-- PDFs still need a Calibre subprocess to read; EPUBs are read from the zip directly
-- Calibre splits subjects on commas at every entry point, so a tag containing one cannot be stored at all. Name headings are rewritten to avoid it; other commas still split
+- Name headings are still rewritten into a comma-free form (`tags.reformat_name_heading`), a habit from the Calibre days; the native writers store commas fine
 - Open Library times out under rapid queries more often than it should
 
 ## Contributing

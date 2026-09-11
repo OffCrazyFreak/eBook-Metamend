@@ -39,7 +39,7 @@ jobs:
       - name: Tests
         run: pytest
 
-      - name: Assert the tool stays dependency-free
+      - name: Assert the tool imports nothing beyond the standard library and pypdf
         run: |
           python - <<'PY'
           import ast, pathlib, sys
@@ -52,6 +52,8 @@ jobs:
           if not files:
               sys.exit("found no package source files to check")
 
+          # pypdf is the one runtime dependency; see pyproject.toml for why.
+          allowed = {"pypdf"}
           third_party = {}
           for path in files:
               tree = ast.parse(path.read_text(), filename=str(path))
@@ -67,14 +69,19 @@ jobs:
                       continue
                   for name in names:
                       root = name.split(".")[0]
-                      if root and root not in sys.stdlib_module_names and root != "ebook_metamend":
+                      if (
+                          root
+                          and root not in sys.stdlib_module_names
+                          and root != "ebook_metamend"
+                          and root not in allowed
+                      ):
                           third_party.setdefault(root, []).append(str(path))
 
           if third_party:
               for module, where in sorted(third_party.items()):
                   print(f"third-party import {module!r} in {where[0]}")
-              sys.exit("the tool must import only the standard library")
-          print(f"stdlib only across {len(files)} files, as documented")
+              sys.exit("the tool must import only the standard library and pypdf")
+          print(f"stdlib plus pypdf across {len(files)} files, as documented")
           PY
 
   web:

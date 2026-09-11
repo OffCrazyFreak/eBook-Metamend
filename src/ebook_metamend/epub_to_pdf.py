@@ -12,10 +12,12 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from . import calibre
 from .library import pairs
 from .matching import junky
+from .writers import pdf
 
 #: Author values that mean "nobody filled this in", seen in real files.
 PLACEHOLDER_AUTHORS = (['Unknown'], ['dam'])
@@ -36,10 +38,10 @@ def _emit(results: Results, on_line: Callable[[str], None] | None, line: str) ->
         on_line(line)
 
 
-def plan(epub_meta: dict, pdf_meta: dict) -> tuple[list[tuple[str, str, str]], list[str]]:
-    """What the PDF is missing that the EPUB has. Returns (described ops, args)."""
+def plan(epub_meta: dict, pdf_meta: dict) -> tuple[list[tuple[str, str, str]], dict[str, Any]]:
+    """What the PDF is missing that the EPUB has. Returns (described ops, gains)."""
     ops: list[tuple[str, str, str]] = []
-    args: list[str] = []
+    gains: dict[str, Any] = {}
 
     epub_title = epub_meta.get('title') or ''
     pdf_title = pdf_meta.get('title') or ''
@@ -50,31 +52,30 @@ def plan(epub_meta: dict, pdf_meta: dict) -> tuple[list[tuple[str, str, str]], l
         and (junky(pdf_title) or len(epub_title) > len(pdf_title) + TITLE_IMPROVEMENT_MARGIN)
     ):
         ops.append(('title', pdf_title, epub_title))
-        args += ['-t', epub_title]
+        gains['title'] = epub_title
 
     epub_authors = epub_meta.get('authors') or []
     pdf_authors = pdf_meta.get('authors') or []
     if epub_authors and (not pdf_authors or pdf_authors in PLACEHOLDER_AUTHORS):
-        value = ' & '.join(epub_authors)
-        ops.append(('author', ', '.join(pdf_authors) or '-', value))
-        args += ['-a', value]
+        ops.append(('author', ', '.join(pdf_authors) or '-', ' & '.join(epub_authors)))
+        gains['authors'] = list(epub_authors)
 
-    for key, flag, describe in (
-        ('publisher', '--publisher', lambda v: v),
-        ('description', '-c', lambda v: f'{len(v)} chars'),
-        ('isbn', '--isbn', lambda v: v),
+    for key, describe in (
+        ('publisher', lambda v: v),
+        ('description', lambda v: f'{len(v)} chars'),
+        ('isbn', lambda v: v),
     ):
         value = epub_meta.get(key)
         if value and not pdf_meta.get(key):
             ops.append((key, '-', describe(value)))
-            args += [flag, value]
+            gains[key] = value
 
     epub_tags = epub_meta.get('tags') or []
     if epub_tags and not pdf_meta.get('tags'):
         ops.append(('tags', '-', ', '.join(epub_tags[:6])))
-        args += ['--tags', calibre.TAG_SEPARATOR.join(epub_tags)]
+        gains['tags'] = list(epub_tags)
 
-    return ops, args
+    return ops, gains
 
 
 def run(
@@ -97,7 +98,7 @@ def run(
         if not epub_meta:
             continue
 
-        ops, args = plan(epub_meta, pdf_meta)
+        ops, gains = plan(epub_meta, pdf_meta)
         if not ops:
             continue
 
@@ -108,8 +109,8 @@ def run(
                 results, on_line, f'      {field_name:<12} {str(was)[:34]:<34} -> {str(now)[:60]}'
             )
         if do_apply:
-            ok, stderr = calibre.write_metadata(book.pdf, args, timeout=90)
-            _emit(results, on_line, f"      {'written' if ok else 'FAILED: ' + stderr[:80]}")
+            ok, reason = pdf.write(book.pdf, gains, {})
+            _emit(results, on_line, f"      {'written' if ok else 'FAILED: ' + reason[:80]}")
         _emit(results, on_line, '')
 
     return results

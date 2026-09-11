@@ -17,6 +17,7 @@ from . import calibre, matching, tags
 from .library import Book, books
 from .sources import SOURCES, Pacer, cache
 from .sources.errors import SourceError, SourceUnavailable
+from .writers import epub, pdf
 
 #: Sources disagreeing with the filename by more than this are dropped before
 #: merging, so a hallucinated match cannot contribute fields.
@@ -337,26 +338,6 @@ def compute_gains(merged: dict[str, Any], current: dict[str, Any], conf: str) ->
     return gains
 
 
-def build_write_args(gains: dict[str, Any], merged: dict[str, Any]) -> list[str]:
-    """Turn gains into ebook-meta arguments."""
-    args: list[str] = []
-    if 'title' in gains:
-        args += ['-t', gains['title']]
-    if 'tags' in gains:
-        args += ['--tags', calibre.TAG_SEPARATOR.join(gains['tags'])]
-    if 'description' in gains:
-        args += ['-c', gains['description']]
-    if 'publisher' in gains:
-        args += ['--publisher', gains['publisher']]
-    if 'isbn' in gains:
-        args += ['--isbn', gains['isbn']]
-    if 'series' in gains:
-        args += ['-s', gains['series']]
-        if merged.get('sidx'):
-            args += ['-i', str(merged['sidx'])]
-    return args
-
-
 def propose(book: Book) -> Proposal | None:
     """Decide what, if anything, should be written to one book.
 
@@ -402,17 +383,19 @@ def propose(book: Book) -> Proposal | None:
     )
 
 
+WRITERS = {'.epub': epub.write, '.pdf': pdf.write}
+
+
 def apply(proposal: Proposal) -> None:
     """Write the gains to every format of the book. Records the outcome."""
-    args = build_write_args(proposal.gains, proposal.merged)
-    if not args:
+    if not proposal.gains:
         return
-    for ext in ('.epub', '.pdf'):
+    for ext, write in WRITERS.items():
         path = proposal.files.get(ext)
         if not path:
             continue
-        ok, stderr = calibre.write_metadata(path, args)
-        proposal.writes.append((ext, ok, stderr[:60]))
+        ok, reason = write(path, proposal.gains, proposal.merged)
+        proposal.writes.append((ext, ok, reason[:60]))
 
 
 def select(
