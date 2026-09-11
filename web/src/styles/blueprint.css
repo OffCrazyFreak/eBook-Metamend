@@ -275,23 +275,39 @@ html {
   stroke: var(--bp-cyan);
   stroke-width: 1.5;
   fill: none;
+  transition: stroke-width 150ms;
 }
 .bp-wire-dashed {
   stroke: var(--bp-line-strong);
   stroke-width: 1.5;
   stroke-dasharray: 4 4;
   fill: none;
+  transition: stroke-width 150ms;
+}
+.bp-wire[data-active='true'],
+.bp-wire-dashed[data-active='true'] {
+  stroke-width: 3;
 }
 .bp-node {
   fill: var(--bp-deep);
   stroke: var(--bp-cyan);
   stroke-width: 1.5;
+  transition: fill 150ms;
 }
 .bp-node-dim {
   fill: var(--bp-deep);
   stroke: var(--bp-line-strong);
   stroke-width: 1;
   stroke-dasharray: 3 3;
+  transition: fill 150ms;
+}
+g[data-active='true'] > .bp-node,
+g[data-active='true'] > .bp-node-dim {
+  fill: rgba(53, 198, 255, 0.12);
+}
+g:focus-visible > .bp-node,
+g:focus-visible > .bp-node-dim {
+  stroke: var(--bp-ink);
 }
 .bp-node-core {
   fill: var(--bp-navy);
@@ -443,13 +459,19 @@ html {
 }
 .bp-sketches path {
   fill: none;
-  stroke: rgba(238, 242, 255, 0.28);
-  stroke-width: 1.4;
+  stroke: rgba(238, 242, 255, 0.34);
+  stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
   animation: bp-sketch 14s linear infinite;
+  animation-duration: inherit;
+  animation-delay: inherit;
+}
+.bp-sketches .bp-sketch-second {
+  stroke: rgba(238, 242, 255, 0.18);
+  stroke-width: 1;
 }
 @keyframes bp-sketch {
   0% {

@@ -621,7 +621,7 @@ function Explainer() {
   return (
     <section id="how-it-decides" className="mt-20 scroll-mt-8 md:mt-32">
       <span className="bp-dim w-64">how it decides</span>
-      <div className="mt-8 grid gap-10 lg:grid-cols-[1fr_22rem] lg:gap-16">
+      <div className="mt-8 grid gap-10 lg:grid-cols-[1fr_26rem] lg:gap-16">
         <div className="max-w-2xl space-y-6 text-base leading-relaxed md:text-lg">
           <p>
             The obvious fix for messy ebook metadata is to look each book up online and write back
@@ -651,82 +651,173 @@ function Explainer() {
   )
 }
 
-// The rule as a drawing: the filename in the middle, three catalogues around it.
-// Two agree and their lines light up; the third answered something else and
-// stays a dashed hairline. Draws itself when scrolled into view.
+// The rule as a drawing: the filename in the middle, three catalogues around
+// it. Two agree and their wires light up; the third answered another book and
+// stays dashed. Draws itself when scrolled into view; hovering or focusing a
+// catalogue shows what it answered for one invented book.
+const DIAGRAM_ANSWERS = {
+  apple: {
+    name: 'Apple Books',
+    answer: 'The Quiet Lathe, Ilse Marrow',
+    scores: 'title 1.00 · author 1.00',
+    agrees: true,
+  },
+  openlib: {
+    name: 'Open Library',
+    answer: 'The Quiet Lathe, Ilse Marrow',
+    scores: 'title 1.00 · author 1.00',
+    agrees: true,
+  },
+  inventaire: {
+    name: 'Inventaire',
+    answer: 'The Quiet Loom, Ilse Marrow',
+    scores: 'title 0.62 · author 1.00',
+    agrees: false,
+  },
+} as const
+
+type DiagramNode = keyof typeof DIAGRAM_ANSWERS
+
 function Agreement() {
   const reduced = useReducedMotion()
+  const [active, setActive] = useState<DiagramNode | null>(null)
   const draw = (delay: number) => ({
     initial: reduced ? false : { pathLength: 0, opacity: 0 },
     whileInView: { pathLength: 1, opacity: 1 },
-    viewport: { once: true, margin: '-80px' },
+    viewport: { once: true, margin: '-40px' },
     transition: { duration: 0.9, delay, ease: EASE },
   })
   const fade = (delay: number) => ({
     initial: reduced ? false : { opacity: 0 },
     whileInView: { opacity: 1 },
-    viewport: { once: true, margin: '-80px' },
+    viewport: { once: true, margin: '-40px' },
     transition: { duration: 0.5, delay },
   })
-  const nodes = [
-    { name: 'Apple Books', x: 30, y: 44, agrees: true },
-    { name: 'Open Library', x: 230, y: 44, agrees: true },
-    { name: 'Inventaire', x: 130, y: 240, agrees: false },
-  ]
+  // Geometry in one place: the centre box and the three node boxes.
+  const core = { x: 96, y: 150, w: 208, h: 44 }
+  const nodes: Record<DiagramNode, { x: number; y: number }> = {
+    apple: { x: 16, y: 40 },
+    openlib: { x: 264, y: 40 },
+    inventaire: { x: 140, y: 268 },
+  }
+  const box = { w: 120, h: 44 }
+  const cx = core.x + core.w / 2
+  const cy = core.y + core.h / 2
+  const anchor = (id: DiagramNode) => {
+    const n = nodes[id]
+    return id === 'inventaire'
+      ? { x: n.x + box.w / 2, y: n.y }
+      : { x: n.x + box.w / 2, y: n.y + box.h }
+  }
+  const caption = active ? DIAGRAM_ANSWERS[active] : null
+
   return (
-    <svg
-      viewBox="0 0 320 300"
-      className="bp-mono w-full max-w-sm self-center justify-self-center text-[10px]"
-      role="img"
-      aria-label="Diagram: the filename in the centre, three catalogues around it, two agreeing"
-    >
-      <motion.line x1="160" y1="150" x2="60" y2="76" className="bp-wire" {...draw(0.2)} />
-      <motion.line x1="160" y1="150" x2="260" y2="76" className="bp-wire" {...draw(0.4)} />
-      <motion.line x1="160" y1="150" x2="160" y2="240" className="bp-wire-dashed" {...draw(0.6)} />
-      <motion.path d="M 90 44 Q 160 4 230 44" className="bp-wire" {...draw(0.9)} />
+    <div className="w-full max-w-md self-start justify-self-center lg:justify-self-end">
+      <svg
+        viewBox="0 0 400 330"
+        className="bp-mono w-full text-[11px]"
+        role="img"
+        aria-label="Diagram: the filename in the centre, three catalogues around it, two agreeing"
+      >
+        {(Object.keys(nodes) as DiagramNode[]).map((id, i) => {
+          const a = anchor(id)
+          const agrees = DIAGRAM_ANSWERS[id].agrees
+          return (
+            <motion.line
+              key={id}
+              x1={cx}
+              y1={cy}
+              x2={a.x}
+              y2={a.y}
+              className={agrees ? 'bp-wire' : 'bp-wire-dashed'}
+              data-active={active === id}
+              {...draw(0.2 + i * 0.2)}
+            />
+          )
+        })}
+        <motion.path
+          d={`M ${nodes.apple.x + box.w} ${nodes.apple.y + 10} Q 200 -6 ${nodes.openlib.x} ${nodes.openlib.y + 10}`}
+          className="bp-wire"
+          {...draw(0.9)}
+        />
+        <motion.text
+          x="200"
+          y="14"
+          textAnchor="middle"
+          className="fill-[var(--bp-cyan)]"
+          {...fade(1.2)}
+        >
+          two agree: HIGH
+        </motion.text>
 
-      <motion.g {...fade(0)}>
-        <rect x="100" y="132" width="120" height="36" className="bp-node-core" />
-        <text x="160" y="149" textAnchor="middle" className="fill-[var(--bp-ink)]">
-          filename
-        </text>
-        <text x="160" y="161" textAnchor="middle" className="fill-[var(--bp-muted)]">
-          author · title
-        </text>
-      </motion.g>
-
-      {nodes.map((n, i) => (
-        <motion.g key={n.name} {...fade(0.3 + i * 0.2)}>
-          <rect
-            x={n.x}
-            y={n.y}
-            width="60"
-            height="32"
-            className={n.agrees ? 'bp-node' : 'bp-node-dim'}
-          />
-          <text x={n.x + 30} y={n.y + 14} textAnchor="middle" className="fill-[var(--bp-ink)]">
-            {n.name}
+        <motion.g {...fade(0)}>
+          <rect x={core.x} y={core.y} width={core.w} height={core.h} className="bp-node-core" />
+          <text x={cx} y={cy - 3} textAnchor="middle" className="fill-[var(--bp-ink)]">
+            the filename
           </text>
-          <text
-            x={n.x + 30}
-            y={n.y + 26}
-            textAnchor="middle"
-            className={n.agrees ? 'fill-[var(--bp-cyan)]' : 'fill-[var(--bp-muted)]'}
-          >
-            {n.agrees ? 'agrees' : 'another book'}
+          <text x={cx} y={cy + 12} textAnchor="middle" className="fill-[var(--bp-muted)]">
+            Ilse Marrow · The Quiet Lathe
           </text>
         </motion.g>
-      ))}
-      <motion.text
-        x="160"
-        y="22"
-        textAnchor="middle"
-        className="fill-[var(--bp-cyan)]"
-        {...fade(1.2)}
-      >
-        two agree: HIGH
-      </motion.text>
-    </svg>
+
+        {(Object.keys(nodes) as DiagramNode[]).map((id, i) => {
+          const n = nodes[id]
+          const info = DIAGRAM_ANSWERS[id]
+          return (
+            <motion.g
+              key={id}
+              role="button"
+              tabIndex={0}
+              aria-label={`${info.name} answered ${info.answer}`}
+              className="cursor-pointer outline-none"
+              data-active={active === id}
+              onMouseEnter={() => setActive(id)}
+              onMouseLeave={() => setActive(null)}
+              onFocus={() => setActive(id)}
+              onBlur={() => setActive(null)}
+              {...fade(0.3 + i * 0.2)}
+            >
+              <rect
+                x={n.x}
+                y={n.y}
+                width={box.w}
+                height={box.h}
+                className={info.agrees ? 'bp-node' : 'bp-node-dim'}
+              />
+              <text
+                x={n.x + box.w / 2}
+                y={n.y + 18}
+                textAnchor="middle"
+                className="fill-[var(--bp-ink)]"
+              >
+                {info.name}
+              </text>
+              <text
+                x={n.x + box.w / 2}
+                y={n.y + 33}
+                textAnchor="middle"
+                className={info.agrees ? 'fill-[var(--bp-cyan)]' : 'fill-[var(--bp-muted)]'}
+              >
+                {info.agrees ? 'agrees' : 'another book'}
+              </text>
+            </motion.g>
+          )
+        })}
+      </svg>
+      <p className="bp-mono mt-2 min-h-[2.5rem] text-xs text-[var(--bp-muted)]" aria-live="polite">
+        {caption ? (
+          <>
+            <span className="text-[var(--bp-ink)]">{caption.name}</span> answered{' '}
+            <span className="text-[var(--bp-ink)]">{caption.answer}</span>. {caption.scores}.{' '}
+            {caption.agrees
+              ? 'Identifies the book on its own.'
+              : 'Wrong book: no say in what is written.'}
+          </>
+        ) : (
+          'Hover or focus a catalogue to see what it answered.'
+        )}
+      </p>
+    </div>
   )
 }
 

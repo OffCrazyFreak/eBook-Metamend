@@ -62,12 +62,19 @@ export function Sketches() {
       </defs>
       <g filter="url(#pencil)">
         {SKETCHES.map((s, i) => (
-          <path
+          <g
             key={i}
-            d={s.d}
-            pathLength={1}
             style={{ animationDuration: `${s.duration}s`, animationDelay: `-${s.delay}s` }}
-          />
+          >
+            <path d={s.d} pathLength={1} />
+            {/* the second pass of the pencil, a little off and lighter */}
+            <path
+              d={s.d}
+              pathLength={1}
+              transform="translate(1.5 1)"
+              className="bp-sketch-second"
+            />
+          </g>
         ))}
       </g>
     </svg>
