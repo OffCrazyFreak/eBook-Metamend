@@ -1,4 +1,9 @@
-# eBook Metamend
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lockup-horizontal/lockup-horizontal-white-on-transparent-1200w.png">
+    <img alt="eBook Metamend" src="assets/brand/lockup-horizontal/lockup-horizontal-navy-on-transparent-1200w.png" width="520">
+  </picture>
+</p>
 
 **Repairs the metadata in an ebook library, without letting a metadata source lie to you.**
 
