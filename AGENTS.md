@@ -60,7 +60,7 @@ Ask first, and **ask means ask**, not quietly pick the smaller option:
 - `cli.py`: argument parsing and printing only. Library code returns, `cli.py` prints.
 - `tools/`: `snapshot.py` (the safety net for `--apply`) and `strip.py` (builds a test corpus). `snapshot.py` re-implements OPF resolution on purpose and must not import it from the package.
 - `tests/`: the safety model at its thresholds, the gain rules, sources, and one end-to-end replay.
-- `web/` (planned): the browser build. Same package running under Pyodide, static files only, deployed to GitHub Pages.
+- `web/`: the browser build. Same package running under Pyodide (Phase 2), static files only, deployed to GitHub Pages. Until a variation is chosen, `web/variations/` holds the five candidates.
 
 Duplication that can silently drift is a bug: the confidence classifier once existed in four copies and the validation suite scored a stale one.
 
@@ -76,6 +76,18 @@ python3 tools/snapshot.py take <root> <out.json>                    # read-only
 
 All of the above are safe without asking. The moment `--apply` appears, ask.
 
+### Web
+
+`web/` is a Vite, React 19 and TypeScript project managed with pnpm. Its runtime dependencies are React, Motion, Tailwind v4, the shadcn parts in `src/components/ui/` and the `@fontsource` packages; add anything else with `pnpm add` and say why in the pull request, never by editing `package.json` by hand. Use Context7 for Vite, Tailwind, Motion and shadcn rather than training data.
+
+```sh
+cd web && pnpm install            # once
+pnpm dev                          # dev server; open a page in the T3 preview
+pnpm typecheck && pnpm format:check && pnpm build   # the definition of done for web/
+```
+
+During the design round each `variations/<name>/` is an independent page sharing only `src/mock`, `src/types.ts` and `src/intake.ts`. No real book names in mock data.
+
 ## Conventions
 
 - One physical line per Markdown paragraph or bullet, never hard-wrapped.
@@ -87,7 +99,7 @@ All of the above are safe without asking. The moment `--apply` appears, ask.
 
 - `ruff check . && ruff format --check . && pytest` pass. Say which passed, which failed and which you did not run. A failure unrelated to your change: report it, say it looks pre-existing, leave it alone.
 - A change to the safety model names the books it was checked against and was replayed against the recorded fixtures.
-- A `web/` UI change has one PR comment holding screenshots of every changed screen at desktop and phone width, posted with `gh pr comment --attach`.
+- A `web/` change passes `pnpm typecheck`, `pnpm format:check` and `pnpm build`, and every changed screen was opened in the T3 preview at desktop and phone width. The user does not want screenshots.
 
 ## Commit and pull request format
 

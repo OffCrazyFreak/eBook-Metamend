@@ -1,0 +1,151 @@
+/* Editorial: white page, big type, one accent, numbers set like a cover. */
+
+:root {
+  --font-body: 'Newsreader', Georgia, serif;
+  --font-display: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+
+  --ed-white: #fbfbfa;
+  --ed-ink: #0b1230;
+  --ed-navy: #001a46;
+  --ed-soft: #4a5273;
+  --ed-muted: #8a90a6;
+  --ed-rule: #d8dae3;
+  --ed-accent: #0068f0;
+  --ed-high: #0a7a3e;
+  --ed-med: #9a5b00;
+  --ed-low: #b4231a;
+
+  --background: var(--ed-white);
+  --foreground: var(--ed-ink);
+  --card: #ffffff;
+  --card-foreground: var(--ed-ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--ed-ink);
+  --primary: var(--ed-navy);
+  --primary-foreground: #ffffff;
+  --muted: #f0f1f4;
+  --muted-foreground: var(--ed-soft);
+  --border: var(--ed-rule);
+  --input: var(--ed-rule);
+  --ring: var(--ed-accent);
+  --radius: 0px;
+}
+
+html {
+  background: var(--ed-white);
+  color: var(--ed-ink);
+  font-family: var(--font-body);
+}
+
+.ed-display {
+  font-family: var(--font-display);
+  font-variation-settings:
+    'opsz' 96,
+    'wdth' 100;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+}
+.ed-display-narrow {
+  font-family: var(--font-display);
+  font-variation-settings:
+    'opsz' 96,
+    'wdth' 78;
+  letter-spacing: -0.02em;
+}
+.ed-label {
+  font-family: var(--font-display);
+  font-variation-settings:
+    'opsz' 12,
+    'wdth' 100;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.ed-rule {
+  border-top: 1px solid var(--ed-ink);
+}
+.ed-hair {
+  border-top: 1px solid var(--ed-rule);
+}
+
+.ed-drop {
+  border: 1px solid var(--ed-ink);
+  transition: background-color 160ms;
+}
+.ed-drop[data-over='true'] {
+  background: #e9f1ff;
+}
+
+.ed-button {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 14;
+  font-weight: 600;
+  font-size: 15px;
+  padding: 12px 20px;
+  border: 1px solid var(--ed-ink);
+  color: var(--ed-ink);
+  transition:
+    background-color 140ms,
+    color 140ms;
+}
+.ed-button:hover,
+.ed-button:focus-visible {
+  background: var(--ed-ink);
+  color: #fff;
+  outline: none;
+}
+.ed-button[data-primary='true'] {
+  background: var(--ed-accent);
+  border-color: var(--ed-accent);
+  color: #fff;
+}
+.ed-button[data-primary='true']:hover,
+.ed-button[data-primary='true']:focus-visible {
+  background: var(--ed-navy);
+  border-color: var(--ed-navy);
+}
+.ed-button:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.ed-row {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr auto;
+  gap: 1.25rem;
+  align-items: baseline;
+  padding: 14px 0;
+  border-top: 1px solid var(--ed-rule);
+}
+@media (min-width: 768px) {
+  .ed-row {
+    grid-template-columns: 2.5rem 1fr 11rem 8rem 6rem;
+  }
+}
+
+.ed-verdict {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 14;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+@keyframes ed-tick {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.ed-live {
+  animation: ed-tick 0.9s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ed-live {
+    animation: none;
+  }
+}

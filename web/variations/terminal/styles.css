@@ -1,0 +1,186 @@
+/* Terminal: a session log. Near-black, navy panels, monospace throughout. */
+
+:root {
+  --font-body: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-display: 'Martian Mono', var(--font-body);
+
+  --tm-black: #05080f;
+  --tm-panel: #001a46;
+  --tm-panel-soft: #0a2358;
+  --tm-rule: #17306b;
+  --tm-text: #d7e0f5;
+  --tm-dim: #6f82ad;
+  --tm-electric: #0068f0;
+  --tm-cyan: #35c6ff;
+  --tm-high: #3ddc84;
+  --tm-med: #f5b942;
+  --tm-low: #ff6b6b;
+
+  --background: var(--tm-black);
+  --foreground: var(--tm-text);
+  --card: var(--tm-panel);
+  --card-foreground: var(--tm-text);
+  --popover: var(--tm-panel);
+  --popover-foreground: var(--tm-text);
+  --primary: var(--tm-cyan);
+  --primary-foreground: var(--tm-black);
+  --muted: var(--tm-panel-soft);
+  --muted-foreground: var(--tm-dim);
+  --border: var(--tm-rule);
+  --input: var(--tm-rule);
+  --ring: var(--tm-cyan);
+  --radius: 0px;
+}
+
+html {
+  background: var(--tm-black);
+  color: var(--tm-text);
+  font-family: var(--font-body);
+}
+
+.tm-screen {
+  position: relative;
+  min-height: 100vh;
+}
+/* One slow scanline, only where motion is welcome. */
+.tm-screen::after {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(53, 198, 255, 0.05) 50%,
+    transparent 100%
+  );
+  background-size: 100% 220px;
+  animation: tm-scan 9s linear infinite;
+  mix-blend-mode: screen;
+}
+@keyframes tm-scan {
+  from {
+    background-position: 0 -220px;
+  }
+  to {
+    background-position: 0 100vh;
+  }
+}
+
+.tm-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.tm-prompt::before {
+  content: '$ ';
+  color: var(--tm-cyan);
+}
+
+.tm-cursor::after {
+  content: '';
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  margin-left: 0.15em;
+  background: var(--tm-cyan);
+  vertical-align: -0.2em;
+  animation: tm-blink 1s steps(2, start) infinite;
+}
+@keyframes tm-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.tm-panel {
+  background: var(--tm-panel);
+  border: 1px solid var(--tm-rule);
+}
+
+.tm-drop[data-over='true'] {
+  background: var(--tm-panel-soft);
+  border-style: solid;
+}
+
+.tm-button {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 10px 16px;
+  border: 1px solid var(--tm-cyan);
+  color: var(--tm-cyan);
+  transition:
+    background-color 100ms,
+    color 100ms;
+}
+.tm-button::before {
+  content: '[ ';
+}
+.tm-button::after {
+  content: ' ]';
+}
+.tm-button:hover,
+.tm-button:focus-visible {
+  background: var(--tm-cyan);
+  color: var(--tm-black);
+  outline: none;
+}
+.tm-button[data-primary='true'] {
+  background: var(--tm-electric);
+  border-color: var(--tm-electric);
+  color: #fff;
+}
+.tm-button[data-primary='true']:hover,
+.tm-button[data-primary='true']:focus-visible {
+  background: var(--tm-cyan);
+  border-color: var(--tm-cyan);
+  color: var(--tm-black);
+}
+.tm-button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.tm-line {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  gap: 1rem;
+  padding: 6px 0;
+  border-bottom: 1px dashed rgba(23, 48, 107, 0.7);
+}
+@media (min-width: 768px) {
+  .tm-line {
+    grid-template-columns: 5.5rem 1fr 12rem 9rem;
+  }
+}
+
+.tm-verdict {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+@keyframes tm-type {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.tm-typed {
+  animation: tm-type 260ms steps(24) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-screen::after {
+    animation: none;
+    display: none;
+  }
+  .tm-cursor::after,
+  .tm-typed {
+    animation: none;
+  }
+}

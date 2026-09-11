@@ -1,0 +1,209 @@
+/* Ledger: a card catalogue. Warm paper, navy ink, rubber stamps. */
+
+:root {
+  --font-body: 'Public Sans', system-ui, sans-serif;
+  --font-display: 'Fraunces Variable', Georgia, serif;
+
+  --lg-paper: #f4efe4;
+  --lg-paper-deep: #eadfc9;
+  --lg-card: #fbf8f1;
+  --lg-rule: #d9cdb4;
+  --lg-ink: #001a46;
+  --lg-ink-soft: #3d4a6b;
+  --lg-muted: #7b7f8e;
+  --lg-electric: #0060e0;
+  --lg-high: #1f7a3f;
+  --lg-med: #a86400;
+  --lg-low: #b3261e;
+
+  --background: var(--lg-paper);
+  --foreground: var(--lg-ink);
+  --card: var(--lg-card);
+  --card-foreground: var(--lg-ink);
+  --popover: var(--lg-card);
+  --popover-foreground: var(--lg-ink);
+  --primary: var(--lg-ink);
+  --primary-foreground: var(--lg-paper);
+  --muted: var(--lg-paper-deep);
+  --muted-foreground: var(--lg-ink-soft);
+  --border: var(--lg-rule);
+  --input: var(--lg-rule);
+  --ring: var(--lg-electric);
+  --radius: 3px;
+}
+
+html {
+  background: var(--lg-paper);
+  color: var(--lg-ink);
+  font-family: var(--font-body);
+}
+
+.lg-page {
+  min-height: 100vh;
+  background-color: var(--lg-paper);
+  /* Faint paper grain, drawn rather than downloaded. */
+  background-image: radial-gradient(rgba(0, 26, 70, 0.035) 0.6px, transparent 0.6px);
+  background-size: 5px 5px;
+}
+
+.lg-display {
+  font-family: var(--font-display);
+  font-variation-settings:
+    'opsz' 96,
+    'SOFT' 40;
+  letter-spacing: -0.01em;
+}
+.lg-display-italic {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-variation-settings:
+    'opsz' 72,
+    'SOFT' 60;
+}
+
+/* An index card: ruled lines, a red header rule like the real thing. */
+.lg-card {
+  position: relative;
+  background-color: var(--lg-card);
+  background-image:
+    linear-gradient(var(--lg-rule) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(179, 38, 30, 0.35) 1px, transparent 1px);
+  background-size:
+    100% 28px,
+    100% 100%;
+  background-position:
+    0 44px,
+    44px 0;
+  border: 1px solid var(--lg-rule);
+  box-shadow:
+    0 1px 0 rgba(0, 26, 70, 0.06),
+    0 10px 24px -18px rgba(0, 26, 70, 0.35);
+}
+.lg-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-top: 2px solid rgba(179, 38, 30, 0.55);
+  pointer-events: none;
+}
+
+.lg-stamp {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variation-settings: 'opsz' 12;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transform: rotate(-4deg);
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='40'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.6 -0.35'/%3E%3C/filter%3E%3Crect width='120' height='40' filter='url(%23n)'/%3E%3C/svg%3E");
+  mask-size: 120px 40px;
+}
+
+.lg-drawer {
+  border: 1px solid var(--lg-rule);
+  background: var(--lg-paper-deep);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6);
+}
+.lg-drawer[data-over='true'] {
+  background: #e2d6bb;
+}
+
+.lg-button {
+  font-family: var(--font-body);
+  font-weight: 600;
+  border: 1.5px solid var(--lg-ink);
+  color: var(--lg-ink);
+  padding: 10px 18px;
+  border-radius: 3px;
+  transition:
+    background-color 160ms,
+    color 160ms,
+    transform 120ms;
+}
+.lg-button:hover,
+.lg-button:focus-visible {
+  background: var(--lg-ink);
+  color: var(--lg-paper);
+  outline: none;
+}
+.lg-button:active {
+  transform: translateY(1px);
+}
+.lg-button[data-primary='true'] {
+  background: var(--lg-ink);
+  color: var(--lg-paper);
+}
+.lg-button[data-primary='true']:hover,
+.lg-button[data-primary='true']:focus-visible {
+  background: var(--lg-electric);
+  border-color: var(--lg-electric);
+}
+.lg-button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.lg-tab {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 14;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border: 1px solid var(--lg-rule);
+  border-bottom: 0;
+  background: var(--lg-paper-deep);
+  color: var(--lg-ink-soft);
+  border-radius: 6px 6px 0 0;
+}
+.lg-tab[aria-pressed='true'] {
+  background: var(--lg-card);
+  color: var(--lg-ink);
+}
+
+@keyframes lg-typing {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.lg-pulse {
+  animation: lg-typing 1.1s ease-in-out infinite;
+}
+
+/* The page-turn to the detail, via the View Transitions API where it exists. */
+::view-transition-old(root) {
+  animation: 180ms ease-out both lg-fade-out;
+}
+::view-transition-new(root) {
+  animation: 240ms ease-out both lg-fade-in;
+}
+@keyframes lg-fade-out {
+  to {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+@keyframes lg-fade-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-pulse {
+    animation: none;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
