@@ -5,6 +5,6 @@ the filename and its author, and only trusted when the evidence clears a
 threshold. See :mod:`ebook_metamend.matching` for the safety model.
 """
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 __all__ = ['__version__']
