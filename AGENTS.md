@@ -54,6 +54,7 @@ Ask first, and **ask means ask**, not quietly pick the smaller option:
 - `src/ebook_metamend/matching.py`: normalisation, similarity and the confidence classifier. Pure, no I/O; that is why the whole safety model is tested in under a second.
 - `enrich.py`: the pipeline. Queries sources, scores, merges, computes gains, applies. Returns values.
 - `tags.py`: subject cleanup and the author-heading rewrite.
+- `web.py`: what the browser worker calls. Bytes in, proposal or repaired bytes out, through the same `enrich` and writers as the desktop.
 - `sources/`: one module per source, each wrapped by `cache.py` so a run can be recorded and replayed offline. The keyless ones (Open Library, Apple Books, Inventaire) fetch through `http.py`, whose transport is swappable so the web worker can supply its own; `select(names)` picks a subset and `WEB_SOURCE_NAMES` is what a browser may call.
 - `writers/`: `epub.py` rewrites only the OPF inside the zip, `pdf.py` appends an incremental update through pypdf, falling back to a full rewrite when pypdf cannot follow the cross-reference chain (reported as `rewritten`). Both read the result back before replacing the original. Every write in the tool goes through these two; nothing else touches a book.
 - `library.py`, `opf.py`, `calibre.py`, `config.py`: filename parsing and the library walk, OPF parsing, the zip-level EPUB reader plus the Calibre plugin wrapper, paths and environment.
@@ -61,7 +62,7 @@ Ask first, and **ask means ask**, not quietly pick the smaller option:
 - `cli.py`: argument parsing and printing only. Library code returns, `cli.py` prints.
 - `tools/`: `snapshot.py` (the safety net for `--apply`) and `strip.py` (builds a test corpus). `snapshot.py` re-implements OPF resolution on purpose and must not import it from the package.
 - `tests/`: the safety model at its thresholds, the gain rules, sources, and one end-to-end replay.
-- `web/`: the browser build. Same package running under Pyodide (Phase 2), static files only, deployed to GitHub Pages. `src/App.tsx` is the page, `src/styles/blueprint.css` its look, `src/mock/` the invented sample it plays until the worker exists.
+- `web/`: the browser build. The same package running under Pyodide in a worker, static files only, deployed to GitHub Pages. `src/App.tsx` is the page, `src/styles/blueprint.css` its look, `src/worker/` and `src/run/` the wiring, `src/mock/` the invented sample.
 
 Duplication that can silently drift is a bug: the confidence classifier once existed in four copies and the validation suite scored a stale one.
 
@@ -79,13 +80,17 @@ All of the above are safe without asking. The moment `--apply` appears, ask.
 
 ### Web
 
-`web/` is a Vite, React 19 and TypeScript project managed with pnpm. Its runtime dependencies are React, Motion, Tailwind v4, the shadcn parts in `src/components/ui/` and the `@fontsource` packages; add anything else with `pnpm add` and say why in the pull request, never by editing `package.json` by hand. Use Context7 for Vite, Tailwind, Motion and shadcn rather than training data.
+`web/` is a Vite, React 19 and TypeScript project managed with pnpm. Its runtime dependencies are React, Motion, Tailwind v4, the shadcn parts in `src/components/ui/`, the `@fontsource` packages and Pyodide; add anything else with `pnpm add` and say why in the pull request, never by editing `package.json` by hand. Use Context7 for Vite, Tailwind, Motion and shadcn rather than training data.
+
+The page runs the Python package itself: `src/worker/metamend.worker.ts` loads Pyodide from `pyodide/` beside the page (copied out of the npm package at build time, never a CDN) and the two wheels in `public/wheels/` (built by `scripts/wheels.sh`, git-ignored), then calls `ebook_metamend.web`. `src/run/use-run.ts` drives one book at a time and paces between books in JavaScript, because Python cannot sleep inside the worker. The invented sample still plays through `src/mock/`.
 
 ```sh
-cd web && pnpm install            # once
+cd web && pnpm install && ./scripts/wheels.sh   # once, and again after a Python change
 pnpm dev                          # dev server; open a page in the T3 preview
-pnpm typecheck && pnpm format:check && pnpm build   # the definition of done for web/
+pnpm typecheck && pnpm format:check && pnpm test && pnpm build && node scripts/pyodide-smoke.mjs   # the definition of done for web/
 ```
+
+On the dev server `window.__metamend.begin(intake)` starts a run from a script, which is how write-back is checked against an OPFS folder in the T3 preview; the built site does not have it.
 
 No real book names in mock data.
 

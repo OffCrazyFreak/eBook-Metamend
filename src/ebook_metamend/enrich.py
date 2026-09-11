@@ -54,6 +54,8 @@ class Proposal:
     unreadable: bool = field(default=False, repr=False)
     #: Populated only when a write was attempted. Not serialised.
     writes: list[tuple[str, bool, str]] = field(default_factory=list, repr=False)
+    #: Every source's score, including the ones that earned no say. Reporting only.
+    scores: list[matching.SourceScore] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         """The serialised form. Explicit rather than ``asdict`` so that adding a
@@ -100,8 +102,12 @@ def query_sources(
     *,
     pause: bool = True,
     sources: tuple[Source, ...] | None = None,
+    on_answer: Callable[[str, bool], None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Ask every source about one book. Sources with no answer are omitted.
+
+    ``on_answer`` hears each source as it replies (name, whether it had the
+    book), which is how a progress display keeps up with a run it cannot see.
 
     A source that cannot run at all is recorded separately. Folding it in with
     "no answer" is how a missing plugin stayed invisible while it silently
@@ -137,6 +143,8 @@ def query_sources(
 
         if answer:
             answers[source.name] = answer
+        if on_answer is not None:
+            on_answer(source.name, bool(answer))
         if pause and not cache.replaying():
             time.sleep(_pacer.delay(source))
     return answers
@@ -344,10 +352,18 @@ def compute_gains(merged: dict[str, Any], current: dict[str, Any], conf: str) ->
     return gains
 
 
-def propose(book: Book, *, sources: tuple[Source, ...] | None = None) -> Proposal | None:
+def propose(
+    book: Book,
+    *,
+    sources: tuple[Source, ...] | None = None,
+    pause: bool = True,
+    on_answer: Callable[[str, bool], None] | None = None,
+) -> Proposal | None:
     """Decide what, if anything, should be written to one book.
 
     ``None`` means no source answered, which is a normal outcome and not a failure.
+    ``pause=False`` leaves the pacing to the caller; the browser build cannot
+    sleep inside Python and waits between books in JavaScript instead.
     """
     facts = book.facts()
     # A stem with no " - " parses as all author and no title, so every title
@@ -355,7 +371,9 @@ def propose(book: Book, *, sources: tuple[Source, ...] | None = None) -> Proposa
     # look equally (un)related. There is nothing to score against, so do not ask.
     if not facts.query:
         return None
-    answers = query_sources(facts.query, facts.author, sources=sources)
+    answers = query_sources(
+        facts.query, facts.author, sources=sources, pause=pause, on_answer=on_answer
+    )
     if not answers:
         return None
 
@@ -386,7 +404,18 @@ def propose(book: Book, *, sources: tuple[Source, ...] | None = None) -> Proposa
         src_titles={name: a.get('title', '') for name, a in surviving.items()},
         current=current or {},
         unreadable=unreadable,
+        scores=scores,
     )
+
+
+def pause_after(sources: tuple[Source, ...] | None = None) -> float:
+    """How long a caller that paces itself should wait before the next book.
+
+    The longest of the sources' current delays, so every catalogue stays under
+    its own rate even though they are asked back to back.
+    """
+    chosen = SOURCES if sources is None else sources
+    return max((_pacer.delay(s) for s in chosen), default=0.0)
 
 
 WRITERS = {'.epub': epub.write, '.pdf': pdf.write}

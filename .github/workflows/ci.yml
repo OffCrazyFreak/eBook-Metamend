@@ -106,11 +106,26 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # The site ships the package and pypdf as wheels beside the interpreter.
+      - name: Build wheels
+        run: ./scripts/wheels.sh
+
       - name: Typecheck
         run: pnpm typecheck
 
       - name: Format check
         run: pnpm format:check
 
+      - name: Unit tests
+        run: pnpm test
+
       - name: Build
         run: pnpm build
+
+      # The Python suite again, inside the interpreter the site ships.
+      - name: Test suite under Pyodide
+        run: node scripts/pyodide-smoke.mjs
