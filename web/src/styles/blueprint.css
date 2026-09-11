@@ -439,6 +439,15 @@ g:focus-visible > .bp-node-dim {
   color: #fff;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 /* The detail dialog grows out of its row and back. Snapshots of different
    shapes would otherwise stretch, so both cover the morphing box instead. */
 ::view-transition-group(detail) {

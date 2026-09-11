@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { flushSync } from 'react-dom'
+import { Check, FolderPen, X } from 'lucide-react'
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react'
 
 import mark from '../../assets/brand/icon/icon-square-512.png'
@@ -95,6 +96,9 @@ export function App() {
   }, [morph])
 
   const [selection, setSelection] = useState<Selection>(DEFAULT_SELECTION)
+  // What happened to a book after the run: Phase 2 fills this from the
+  // download and write-back paths; for now the buttons mark the selection.
+  const [outcome, setOutcome] = useState<Map<string, Outcome>>(() => new Map())
   const counts = useMemo(() => {
     const done = state.books.filter((b) => b.status === 'done')
     const writes = done.filter(willWrite)
@@ -106,13 +110,37 @@ export function App() {
       // Files the download would hold, and whether every repairable one is in.
       picked: writes.filter((b) => isSelected(selection, b)).length,
       allWrites: writes.every((b) => isSelected(selection, b)),
+      written: [...outcome.values()].filter((o) => o === 'written').length,
+      downloaded: [...outcome.values()].filter((o) => o === 'downloaded').length,
     }
-  }, [state.books, selection])
+  }, [state.books, selection, outcome])
   const toggle = useCallback((book: BookResult) => setSelection((s) => toggled(s, book)), [])
   const choose = useCallback(
     (name: Preset) => setSelection(preset(name, state.books)),
     [state.books],
   )
+  const [confirming, setConfirming] = useState(false)
+  const pickedBooks = useCallback(
+    () => state.books.filter((b) => willWrite(b) && isSelected(selection, b)),
+    [state.books, selection],
+  )
+  const download = useCallback(
+    (books: BookResult[]) =>
+      setOutcome((prev) => {
+        const next = new Map(prev)
+        for (const b of books) next.set(b.stem, 'downloaded')
+        return next
+      }),
+    [],
+  )
+  const write = useCallback(() => {
+    setOutcome((prev) => {
+      const next = new Map(prev)
+      for (const b of pickedBooks()) next.set(b.stem, 'written')
+      return next
+    })
+    setConfirming(false)
+  }, [pickedBooks])
   const [others, setOthers] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   // The sample plays when nothing was handed over; a handful of non-ebooks is
@@ -135,6 +163,7 @@ export function App() {
   )
   const restart = useCallback(() => {
     setSelection(DEFAULT_SELECTION)
+    setOutcome(new Map())
     setOthers(0)
     reset()
   }, [reset])
@@ -187,6 +216,7 @@ export function App() {
                 active={state.active}
                 origin={selected === null ? origin : null}
                 flash={flash}
+                outcome={outcome}
                 selection={selection}
                 onToggle={toggle}
                 onToggleAll={(on) => choose(on ? 'all' : 'none')}
@@ -195,6 +225,8 @@ export function App() {
               <Actions
                 counts={counts}
                 done={state.phase === 'done'}
+                onDownload={() => download(pickedBooks())}
+                onWrite={() => setConfirming(true)}
                 onReset={restart}
                 onStop={stop}
               />
@@ -206,7 +238,19 @@ export function App() {
         </div>
       </LayoutGroup>
 
-      <Detail book={selected} morph={morph} onClose={close} />
+      <Detail
+        book={selected}
+        morph={morph}
+        outcome={selected ? outcome.get(selected.stem) : undefined}
+        onDownload={() => selected && download([selected])}
+        onClose={close}
+      />
+      <WriteConfirm
+        open={confirming}
+        count={counts.picked}
+        onCancel={() => setConfirming(false)}
+        onConfirm={write}
+      />
     </div>
   )
 }
@@ -625,7 +669,14 @@ function Summary({
   onJump,
 }: {
   books: BookResult[]
-  counts: { done: number; total: number; high: number; writes: number }
+  counts: {
+    done: number
+    total: number
+    high: number
+    writes: number
+    written: number
+    downloaded: number
+  }
   phase: 'running' | 'done'
   elapsedMs: number
   others: number
@@ -652,6 +703,19 @@ function Summary({
               <span className="bp-mono"> in {(elapsedMs / 1000).toFixed(1)} s</span>
             )}
             .
+            {counts.written > 0 && (
+              <>
+                {' '}
+                <span className="bp-mono text-[var(--bp-cyan)]">{counts.written}</span> written.
+              </>
+            )}
+            {counts.downloaded > 0 && (
+              <>
+                {' '}
+                <span className="bp-mono text-[var(--bp-cyan)]">{counts.downloaded}</span>{' '}
+                downloaded.
+              </>
+            )}
           </p>
           {others > 0 && (
             <p className="bp-mono mt-2 text-xs text-[var(--bp-muted)]">
@@ -724,6 +788,7 @@ function Results({
   active,
   origin,
   flash,
+  outcome,
   selection,
   onToggle,
   onToggleAll,
@@ -736,6 +801,7 @@ function Results({
   origin: string | null
   // The row a segment click jumped to; it flashes its rule once.
   flash: string | null
+  outcome: Map<string, Outcome>
   selection: Selection
   onToggle: (book: BookResult) => void
   onToggleAll: (include: boolean) => void
@@ -808,7 +874,7 @@ function Results({
                     </span>
                     {done && book.proposal && (
                       <span className="bp-mono block truncate text-xs text-[var(--bp-muted)] md:hidden">
-                        gains: {Object.keys(book.proposal.gains).join(', ') || 'none'}
+                        <Gains book={book} outcome={outcome.get(book.stem)} prefix="gains: " />
                       </span>
                     )}
                   </span>
@@ -831,9 +897,9 @@ function Results({
                     )}
                   </span>
                   <span className="bp-mono hidden text-xs text-[var(--bp-muted)] md:block">
-                    {done && book.proposal
-                      ? Object.keys(book.proposal.gains).join(', ') || 'none'
-                      : ''}
+                    {done && book.proposal && (
+                      <Gains book={book} outcome={outcome.get(book.stem)} />
+                    )}
                   </span>
                   <span className="text-right">
                     {done ? (
@@ -865,6 +931,94 @@ function Results({
         })}
       </AnimatePresence>
     </ol>
+  )
+}
+
+type Outcome = 'written' | 'downloaded'
+
+// The gains column once a file has gone out: a drawn check and the outcome
+// replace the field list, which now lives in the file itself.
+function Gains({
+  book,
+  outcome,
+  prefix = '',
+}: {
+  book: BookResult
+  outcome?: Outcome
+  prefix?: string
+}) {
+  const reduced = useReducedMotion()
+  if (!outcome)
+    return <>{prefix + (Object.keys(book.proposal?.gains ?? {}).join(', ') || 'none')}</>
+  return (
+    <motion.span
+      className="inline-flex items-center gap-1 text-[var(--bp-cyan)]"
+      initial={reduced ? false : { opacity: 0, x: -4 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.3, ease: EASE }}
+    >
+      <Check className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
+      {outcome}
+    </motion.span>
+  )
+}
+
+// Writing changes files in place, so it gets a stop: the hero icon settles in
+// with a spring, Cancel sits left and Write right, and Enter never confirms
+// (the dialog focuses its container, so two stray Enters would run it).
+function WriteConfirm({
+  open,
+  count,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean
+  count: number
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const reduced = useReducedMotion()
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent
+        showCloseButton={false}
+        className="max-w-sm border-[var(--bp-line-strong)] bg-[var(--bp-deep)] p-0 text-[var(--bp-ink)]"
+      >
+        <div className="flex flex-col items-center px-6 pt-8 text-center">
+          <motion.div
+            className="relative flex size-14 items-center justify-center"
+            initial={reduced ? false : { scale: 0.6, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 20 }}
+            aria-hidden="true"
+          >
+            <span className="absolute inset-0 rounded-full bg-[rgba(53,198,255,0.1)]" />
+            <span className="absolute inset-1.5 rounded-full bg-[rgba(53,198,255,0.15)]" />
+            <FolderPen className="relative size-6 text-[var(--bp-cyan)]" strokeWidth={2.2} />
+          </motion.div>
+          <DialogTitle className="bp-display mt-4 text-xl text-[var(--bp-ink)]">
+            Write {count} {count === 1 ? 'file' : 'files'} into the folder?
+          </DialogTitle>
+          <DialogDescription className="mt-2 text-sm text-[var(--bp-muted)]">
+            Only missing fields are added. Nothing is blanked, and every other file is left alone.
+          </DialogDescription>
+        </div>
+        <div className="flex items-center justify-between gap-2 px-6 pt-3 pb-6">
+          <button className="bp-button inline-flex items-center gap-2" onClick={onCancel}>
+            <X className="size-4" aria-hidden="true" />
+            Cancel
+          </button>
+          <button
+            className="bp-button inline-flex items-center gap-2"
+            data-primary="true"
+            onClick={onConfirm}
+          >
+            <Check className="size-4" aria-hidden="true" />
+            Write
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -913,11 +1067,15 @@ function Tick({
 function Actions({
   counts,
   done,
+  onDownload,
+  onWrite,
   onReset,
   onStop,
 }: {
   counts: { picked: number; allWrites: boolean }
   done: boolean
+  onDownload: () => void
+  onWrite: () => void
   onReset: () => void
   onStop: () => void
 }) {
@@ -928,11 +1086,16 @@ function Actions({
         className="bp-button w-full md:w-auto"
         data-primary="true"
         disabled={!done || counts.picked === 0}
+        onClick={onDownload}
       >
         Download{some}
       </button>
       {canWriteInPlace && (
-        <button className="bp-button w-full md:w-auto" disabled={!done || counts.picked === 0}>
+        <button
+          className="bp-button w-full md:w-auto"
+          disabled={!done || counts.picked === 0}
+          onClick={onWrite}
+        >
           Write{some} into the folder
         </button>
       )}
@@ -959,10 +1122,14 @@ function Actions({
 function Detail({
   book,
   morph,
+  outcome,
+  onDownload,
   onClose,
 }: {
   book: BookResult | null
   morph: boolean
+  outcome: Outcome | undefined
+  onDownload: () => void
   onClose: () => void
 }) {
   const p = book?.proposal ?? null
@@ -1063,11 +1230,17 @@ function Detail({
                     </div>
                   ))}
                 </dl>
-                {willWrite(book) && (
-                  <button className="bp-button mt-8" data-primary="true">
-                    Download this file
-                  </button>
-                )}
+                {willWrite(book) &&
+                  (outcome ? (
+                    <p className="bp-mono mt-8 inline-flex items-center gap-1 text-xs text-[var(--bp-cyan)]">
+                      <Check className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
+                      {outcome}
+                    </p>
+                  ) : (
+                    <button className="bp-button mt-8" data-primary="true" onClick={onDownload}>
+                      Download this file
+                    </button>
+                  ))}
               </>
             )}
           </div>
