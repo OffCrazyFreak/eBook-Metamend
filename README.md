@@ -140,7 +140,7 @@ This is the reason for the whole design. A source that returns a plausible wrong
 
 ## Setup
 
-The web version needs no setup: open the page. The desktop tool asks two more catalogues (Kobo and Google Books, which a browser cannot reach) and runs over a whole library from the command line.
+The web version needs no setup: open the page. The desktop tool asks two more catalogues (Kobo and Google Books, which the web version cannot host) and runs over a whole library from the command line.
 
 Python 3.10+ with pypdf (installed with the package), and Calibre for the Kobo and Google Books sources. Calibre no longer touches the books themselves. No system install needed:
 

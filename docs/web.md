@@ -8,11 +8,11 @@ The same Python package as the desktop tool, running inside the page under Pyodi
 
 ## Hosting
 
-GitHub Pages, static files only. There is no server to run, no account elsewhere, no key to keep secret and no place a file could be sent to. The Pages workflow builds the site from the same commit as the package, runs the Python test suite inside Pyodide, and deploys. Anything with a server would also have had to accept uploads of the visitor's books, and a 50 MB PDF is over the request limit of every serverless host anyway.
+GitHub Pages, static files only. There is no server to run, no account elsewhere, no key to keep secret and no place a file could be sent to. The Pages workflow builds the site from the same commit as the package, runs the Python test suite inside Pyodide, and deploys. Anything with a server would also have had to accept uploads of the visitor's books, and a 50 MB PDF is over the request limit of the usual serverless hosts anyway (4.5 MB on Vercel, 6 MB on Netlify and Lambda).
 
 ## Pyodide from our own site
 
-The interpreter (about 13 MB, three files) is copied out of the `pyodide` npm package into the site at build time. A CDN was the obvious alternative and was rejected: the visitor's browser would then talk to a third party, and the runtime could change under us. The package and pypdf ship as two wheels beside it, built by `web/scripts/wheels.sh` with pypdf pinned by hash; the worker installs both with `loadPackage`, so `micropip` and PyPI are never touched at runtime.
+The interpreter (about 13 MB in six files, most of it one wasm file) is copied out of the `pyodide` npm package into the site at build time. A CDN was the obvious alternative and was rejected: the visitor's browser would then talk to a third party, and the runtime could change under us. The package and pypdf ship as two wheels beside it, built by `web/scripts/wheels.sh` with pypdf pinned by hash; the worker installs both with `loadPackage`, so `micropip` and PyPI are never touched at runtime.
 
 Nothing large enters git: the wheels and the copied interpreter are build products.
 
@@ -32,7 +32,7 @@ Google Books is not asked: its keyless quota is shared by everyone in the world 
 
 | Browser | Chosen how | Repairs go |
 | ------- | ---------- | ---------- |
-| Chrome, Edge | folder picker, file picker, or a drop | back into the same files, after one permission prompt on Write |
+| Chrome, Edge | folder picker, file picker, or a drop | back into the same files after a permission prompt on Write (one per folder, one per loose file), or as downloads, the visitor's choice |
 | Firefox, Safari | folder input, file input, or a drop | as downloads: each file when five or fewer, one zip beyond that |
 
 The difference is the File System Access API, which only Chromium browsers ship. It is detected at runtime, never guessed from the browser name. Read access is all the check needs; write access is asked for on Write, so the dry run stays a dry run. A book already written or downloaded is not written again.
