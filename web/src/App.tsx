@@ -4,7 +4,7 @@ import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/r
 import mark from '../../assets/brand/icon/icon-square-512.png'
 import wordmark from '../../assets/brand/wordmark/wordmark-white-on-transparent-800w.png'
 import { Sketches } from '@/components/sketches'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { canWriteInPlace, hasFiles, namesFromDrop, namesFromFileList } from '@/intake'
 import { useRun } from '@/mock/use-run'
 import {
@@ -304,19 +304,62 @@ function Intake({ onStart }: { onStart: (names: string[]) => void }) {
   )
 }
 
+// The mark draws itself in as the runtime downloads: the book's outline follows
+// the progress, and the wrench drops in when it reaches the end.
 function Loading({ progress, label }: { progress: number; label: string }) {
+  const reduced = useReducedMotion()
+  const done = progress >= 1
   return (
-    <section className="mt-20 flex flex-col items-center text-center" aria-live="polite">
-      <span className="bp-dim w-64">loading python</span>
-      <p className="bp-display mt-6 text-3xl">{label}</p>
-      <div className="mt-8 h-[2px] w-full max-w-lg bg-[var(--bp-line)]">
-        <motion.div
-          className="h-full bg-[var(--bp-cyan)]"
-          initial={{ width: 0 }}
-          animate={{ width: `${Math.round(progress * 100)}%` }}
-          transition={{ ease: 'linear', duration: 0.4 }}
-        />
-      </div>
+    <section className="mt-16 flex flex-col items-center text-center md:mt-20" aria-live="polite">
+      <svg viewBox="0 0 200 200" className="h-40 w-40 md:h-48 md:w-48" aria-hidden="true">
+        {/* the book: a slab in isometric view, three faces */}
+        {[
+          'M 60 150 L 60 70 L 120 40 L 120 120 Z',
+          'M 60 150 L 84 162 L 144 132 L 120 120',
+          'M 120 40 L 144 52 L 144 132',
+          'M 66 72 L 66 146 M 72 75 L 72 149 M 78 78 L 78 152',
+        ].map((d, i) => (
+          <motion.path
+            key={i}
+            d={d}
+            className="bp-wire"
+            pathLength={1}
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: Math.max(0, Math.min(1, progress * 1.15 - i * 0.05)) }}
+            transition={{ duration: 0.4, ease: 'linear' }}
+          />
+        ))}
+        {/* the wrench, dropped in at the end */}
+        <motion.g
+          initial={{ opacity: 0, y: -40, rotate: -20 }}
+          animate={done ? { opacity: 1, y: 0, rotate: 0 } : { opacity: 0, y: -40, rotate: -20 }}
+          transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 320, damping: 18 }}
+          style={{ originX: '90px', originY: '100px' }}
+        >
+          <path
+            d="M 78 118 L 100 96 M 100 96 a 9 9 0 1 0 8 -8 l -4 4 l 4 4"
+            className="bp-wire"
+            style={{ strokeWidth: 3 }}
+          />
+        </motion.g>
+        {/* three cubes, each lit when its share of the download lands */}
+        {[
+          [40, 60],
+          [160, 60],
+          [100, 176],
+        ].map(([x, y], i) => (
+          <motion.path
+            key={i}
+            d={`M ${x} ${y - 8} l 7 4 v 8 l -7 4 l -7 -4 v -8 z M ${x - 7} ${y - 4} l 7 4 l 7 -4 M ${x} ${y} v 8`}
+            className="bp-wire"
+            initial={{ opacity: 0.15 }}
+            animate={{ opacity: progress > (i + 1) / 3 - 0.01 ? 1 : 0.15 }}
+            transition={{ duration: 0.3 }}
+          />
+        ))}
+      </svg>
+      <span className="bp-dim mt-4 w-64">loading python</span>
+      <p className="bp-display mt-4 text-2xl md:text-3xl">{label}</p>
       <p className="bp-mono mt-3 text-xs text-[var(--bp-muted)]">
         {Math.round(progress * 100)}% of about 6 MB, once. Cached after that.
       </p>
@@ -514,21 +557,18 @@ function Actions({
 function Detail({ book, onClose }: { book: BookResult | null; onClose: () => void }) {
   const p = book?.proposal ?? null
   return (
-    <Sheet open={book !== null} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent
-        side="right"
-        className="w-full overflow-y-auto border-l-[var(--bp-line-strong)] bg-[var(--bp-deep)] p-0 text-[var(--bp-ink)] sm:max-w-xl"
-      >
+    <Dialog open={book !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto border-[var(--bp-line-strong)] bg-[var(--bp-deep)] p-0 text-[var(--bp-ink)] sm:max-w-2xl">
         {book && (
           <div className="p-6 md:p-8">
             <span className="bp-dim w-48">sheet detail</span>
-            <SheetTitle className="bp-display mt-4 text-2xl leading-tight text-[var(--bp-ink)]">
+            <DialogTitle className="bp-display mt-4 text-2xl leading-tight text-[var(--bp-ink)]">
               {book.facts.title}
-            </SheetTitle>
-            <SheetDescription className="text-[var(--bp-muted)]">
+            </DialogTitle>
+            <DialogDescription className="text-[var(--bp-muted)]">
               {book.facts.author}
               {book.facts.series && ` · ${book.facts.series} ${book.facts.series_index}`}
-            </SheetDescription>
+            </DialogDescription>
 
             {p === null ? (
               <p className="mt-6 text-[var(--bp-muted)]">
@@ -606,8 +646,8 @@ function Detail({ book, onClose }: { book: BookResult | null; onClose: () => voi
             )}
           </div>
         )}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   )
 }
 
