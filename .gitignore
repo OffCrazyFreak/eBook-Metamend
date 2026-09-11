@@ -5,6 +5,8 @@ proposals*.json
 *.log
 dryrun*.txt
 validation.txt
+# Test corpus and recorded source answers, copied from a real library.
+baseline/
 
 # --- Python ---
 __pycache__/
