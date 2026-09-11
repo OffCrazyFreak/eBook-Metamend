@@ -48,15 +48,18 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 describe('Client', () => {
   it('starts the worker with the base the page is served from', () => {
+    vi.stubEnv('BASE_URL', '/eBook-Metamend/')
     const { worker } = make()
     expect(worker.posted).toHaveLength(1)
-    const init = worker.posted[0].message
-    expect(init.type).toBe('init')
-    if (init.type === 'init') expect(init.base).toMatch(/^http:\/\/.+\/$/)
+    expect(worker.posted[0].message).toEqual({
+      type: 'init',
+      base: 'http://localhost:3000/eBook-Metamend/',
+    })
   })
 
   it('resolves ready once the worker says so and forwards the loading events', async () => {

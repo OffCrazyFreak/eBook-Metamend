@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Intake, IntakeFile } from '@/intake'
@@ -17,6 +17,7 @@ const { FakeClient, script, FACTS } = vi.hoisted(() => {
   // What the fake worker answers, set per test. A propose that is never
   // answered leaves the run mid-book, which is how stop is exercised.
   const script = {
+    ready: (_onEvent: (event: Broadcast) => void): Promise<void> => Promise.resolve(),
     propose: (_stem: string, _files: FileBytes): Promise<Omit<Proposed, 'type' | 'id'>> =>
       Promise.resolve({ facts: FACTS, proposal: null, pause: 0, unavailable: [] }),
     apply: (
@@ -38,7 +39,7 @@ const { FakeClient, script, FACTS } = vi.hoisted(() => {
       this.onEvent = onEvent
     }
     ready() {
-      return Promise.resolve()
+      return script.ready(this.onEvent)
     }
     reset() {
       this.resets++
@@ -98,7 +99,6 @@ function intake(files: IntakeFile[]): Intake {
   return { books: files, others: 0, folders: [] }
 }
 
-// A writable file handle that records what was written to it.
 function fakeHandle(written: Record<string, Uint8Array>, name: string, permission = 'granted') {
   return {
     kind: 'file',
@@ -119,9 +119,14 @@ function fakeHandle(written: Record<string, Uint8Array>, name: string, permissio
 
 const downloads: { name: string; blob: Blob }[] = []
 
+// Without vitest globals the library registers neither its act flag nor its
+// unmount, so a hook would outlive its test.
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
 beforeEach(() => {
   FakeClient.instances = []
   downloads.length = 0
+  script.ready = () => Promise.resolve()
   script.propose = () =>
     Promise.resolve({ facts: FACTS, proposal: null, pause: 0, unavailable: [] })
   script.apply = () => Promise.resolve({ files: {}, writes: [] })
@@ -138,13 +143,16 @@ beforeEach(() => {
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
     this: HTMLAnchorElement,
   ) {
-    downloads[downloads.length - 1].name = this.download
+    const last = downloads.at(-1)
+    if (last) last.name = this.download
   })
 })
 
 afterEach(() => {
+  cleanup()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 describe('useRun start', () => {
@@ -233,6 +241,28 @@ describe('useRun start', () => {
   })
 })
 
+describe('useRun pacing', () => {
+  it('waits the pause the worker asks for between books, not after the last', async () => {
+    vi.useFakeTimers()
+    script.propose = (stem) =>
+      Promise.resolve({ facts: FACTS, proposal: high(stem), pause: 2, unavailable: [] })
+    const { result } = renderHook(() => useRun())
+    act(
+      () =>
+        void result.current.start(
+          intake([file('Ada Example - One.epub'), file('Ada Example - Two.epub')]),
+        ),
+    )
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(result.current.state.books.map((b) => b.status)).toEqual(['done', 'pending'])
+    await act(() => vi.advanceTimersByTimeAsync(1999))
+    expect(result.current.state.books[1].status).toBe('pending')
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(result.current.state.books[1].status).toBe('done')
+    expect(result.current.state.phase).toBe('done')
+  })
+})
+
 describe('useRun stop, reset and retry', () => {
   it('keeps the verdicts reached, marks the rest skipped and drops the late answer', async () => {
     const answered: string[] = []
@@ -279,16 +309,63 @@ describe('useRun stop, reset and retry', () => {
   })
 
   it('retry replaces the worker and runs the same files again', async () => {
+    let proposed = 0
+    script.propose = () => {
+      proposed++
+      return Promise.resolve({ facts: FACTS, proposal: null, pause: 0, unavailable: [] })
+    }
     const { result } = renderHook(() => useRun())
     await act(() => result.current.start(intake([file('Ada Example - Sample.epub')])))
     await waitFor(() => expect(result.current.state.phase).toBe('done'))
     await act(async () => {
       result.current.retry()
     })
+    await waitFor(() => expect(FakeClient.instances[1]?.resets).toBe(1))
+    await waitFor(() => expect(result.current.state.phase).toBe('done'))
+    expect(FakeClient.instances[0].terminated).toBe(true)
+    expect(proposed).toBe(2)
+    expect(result.current.state.books[0].stem).toBe('Ada Example - Sample')
+  })
+
+  it('retry after a runtime failure starts a fresh worker', async () => {
+    script.ready = (onEvent) => {
+      onEvent({ type: 'failed', message: 'No wheel' })
+      return Promise.reject(new Error('No wheel'))
+    }
+    const { result } = renderHook(() => useRun())
+    await act(() => result.current.start(intake([file('Ada Example - Sample.epub')])))
+    expect(result.current.state.phase).toBe('failed')
+    expect(result.current.state.error).toBe('No wheel')
+    script.ready = () => Promise.resolve()
+    await act(async () => {
+      result.current.retry()
+    })
     await waitFor(() => expect(result.current.state.phase).toBe('done'))
     expect(FakeClient.instances).toHaveLength(2)
-    expect(FakeClient.instances[0].terminated).toBe(true)
-    expect(result.current.state.books[0].stem).toBe('Ada Example - Sample')
+  })
+
+  it('a reset while the runtime loads leaves the late run unstarted', async () => {
+    let release!: () => void
+    script.ready = () => new Promise((resolve) => (release = resolve))
+    const { result } = renderHook(() => useRun())
+    act(() => void result.current.start(intake([file('Ada Example - Sample.epub')])))
+    expect(result.current.state.phase).toBe('loading')
+    act(() => result.current.reset())
+    await act(async () => release())
+    expect(result.current.state.phase).toBe('idle')
+    expect(FakeClient.instances[0].resets).toBe(0)
+  })
+
+  it('retry of a failed sample replays the sample without a worker', async () => {
+    vi.useFakeTimers()
+    const { result } = renderHook(() => useRun({ failLoad: true }))
+    act(() => result.current.playSample())
+    await act(() => vi.advanceTimersByTimeAsync(3000))
+    expect(result.current.state.phase).toBe('failed')
+    act(() => result.current.retry())
+    expect(result.current.state.phase).toBe('loading')
+    expect(result.current.state.sample).toBe(true)
+    expect(FakeClient.instances).toHaveLength(0)
   })
 
   it('the sample plays without a worker and cannot be written', () => {
@@ -351,7 +428,8 @@ describe('useRun repair', () => {
     expect([...zip.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04])
     const text = new TextDecoder('latin1').decode(zip)
     for (const name of names) expect(text).toContain(name)
-    // Stored, not deflated: the central directory records method 0 for each entry.
+    // A pin on client-zip: the archive stays stored, as the Python one was. The
+    // method sits 10 bytes into a central header (signature 4, made by 2, needed 2, flags 2).
     const central = text.indexOf('PK\x01\x02')
     expect(central).toBeGreaterThan(0)
     expect(zip[central + 10]).toBe(0)
@@ -407,6 +485,61 @@ describe('useRun repair', () => {
     const outcome = await result.current.repair(result.current.state.books, 'downloaded')
     expect(outcome.failures).toHaveLength(3)
     expect(outcome.outcomes.size).toBe(0)
+    expect(downloads).toEqual([])
+  })
+
+  it('downloads five files loose and only the sixth tips into a zip', async () => {
+    const names = ['One', 'Two', 'Three', 'Four', 'Five'].map((n) => `Ada Example - ${n}.epub`)
+    const { result } = await run(names.map((n) => file(n)))
+    await result.current.repair(result.current.state.books, 'downloaded')
+    expect(downloads.map((d) => d.name)).toEqual(names)
+  })
+
+  it('reports a book whose repair threw and downloads nothing for it', async () => {
+    const { result } = await run([file('Ada Example - One.epub')])
+    script.apply = () => Promise.reject(new Error('boom'))
+    const outcome = await result.current.repair(result.current.state.books, 'downloaded')
+    expect(outcome.failures).toEqual(['Ada Example - One: boom'])
+    expect(outcome.outcomes.size).toBe(0)
+    expect(downloads).toEqual([])
+  })
+
+  it('asks the folder for permission too and stops when it is refused', async () => {
+    const written: Record<string, Uint8Array> = {}
+    const hook = await run([
+      file('Ada Example - One.epub', 'x', fakeHandle(written, 'Ada Example - One.epub')),
+    ])
+    const folder = fakeHandle({}, 'lib', 'denied') as unknown as FileSystemDirectoryHandle
+    await act(() =>
+      hook.result.current.start({
+        books: [file('Ada Example - One.epub', 'x', fakeHandle(written, 'Ada Example - One.epub'))],
+        others: 0,
+        folders: [folder],
+      }),
+    )
+    await waitFor(() => expect(hook.result.current.state.phase).toBe('done'))
+    const outcome = await hook.result.current.repair(hook.result.current.state.books, 'written')
+    expect(outcome.failures).toEqual(['Write access was not granted.'])
+    expect(written).toEqual({})
+  })
+
+  it('asks for write access only when the handle does not already have it', async () => {
+    const written: Record<string, Uint8Array> = {}
+    const handle = fakeHandle(written, 'Ada Example - One.epub', 'prompt')
+    const request = vi.spyOn(handle, 'requestPermission').mockResolvedValue('granted')
+    const { result } = await run([file('Ada Example - One.epub', 'x', handle)])
+    const outcome = await result.current.repair(result.current.state.books, 'written')
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(Object.keys(written)).toEqual(['Ada Example - One.epub'])
+    expect([...outcome.outcomes]).toEqual([['Ada Example - One', 'written']])
+  })
+
+  it('the sample never reaches the worker even after a real run', async () => {
+    const { result } = await run([file('Ada Example - One.epub')])
+    const [row] = result.current.state.books
+    act(() => result.current.playSample())
+    const outcome = await result.current.repair([row], 'downloaded')
+    expect([...outcome.outcomes]).toEqual([['Ada Example - One', 'downloaded']])
     expect(downloads).toEqual([])
   })
 
