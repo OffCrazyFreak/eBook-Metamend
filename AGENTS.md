@@ -1,8 +1,10 @@
 # AGENTS.md
 
-eBook Metamend repairs embedded metadata across a folder of EPUB and PDF files. Filenames are the ground truth; online metadata sources are unreliable witnesses.
+eBook Metamend repairs embedded metadata across a folder of EPUB and PDF files. Filenames are the ground truth; online metadata sources are unreliable witnesses. Instructions below are project facts and conventions, not general coding advice.
 
-Python 3.10+, standard library only. Calibre is invoked as an external command line tool. `CLAUDE.md` imports this file, so Claude Code and Codex read the same instructions.
+Python 3.10+, standard library plus pypdf (the one allowed dependency: the only pure-Python PDF writer that appends instead of rewriting). Calibre is an optional external command line tool, used for the Kobo source. `CLAUDE.md` imports this file, so Claude Code and Codex read the same instructions. Decisions and traps that are not visible in the code are indexed in `docs/README.md`; read the matching page before touching that area.
+
+Never commit anything non-public: no real book names (filenames, proposal JSON, run logs, `spotcheck/`), no personal email addresses or real names, no local paths, no secret values. This repository is public, `.gitignore` is not a substitute for reading the diff, and everything you write here is publishable.
 
 ## The safety model
 
@@ -20,61 +22,76 @@ Never, unless asked explicitly in that same message:
 
 **Never pick a field by length.** It looks harmless and has failed three times, on a sequel, a graphic adaptation and a companion planner, each longer than the book beside it. The filename decides. The one exception is load-bearing: once the closest answer is chosen, the longest answer proven to be that same title plus a subtitle wins, so `Sapiens: A Brief History of Humankind` still beats `Sapiens`.
 
-## Boundaries
+## Workflow
 
-Never:
-
-- Commit or push unless asked, and then only that task's changes.
-- Commit anything naming real books: filenames, proposal JSON, run logs, `spotcheck/`. This repository is public and `.gitignore` is not a substitute for reading the diff.
-- Hardcode a library path. It comes from `EBOOK_LIBRARY`.
-- Add a third-party runtime dependency. CI enforces standard library only; ruff and pytest are dev-only and fine.
+- Each task runs on its own branch and ends in a pull request into `main`. Merge only when the message says so; never push to `main` directly.
+- For nontrivial changes, or when asked to research, research first: read at least ten independent sources, thirty for audits or comparisons, and check claims against the version actually installed, not a project's main branch. Settle open choices with the user after the facts are in. Research-only requests end with the report.
+- Never assume. Verify versions, limits and API shapes with a tool, the docs or a live check, and call anything unverified a hypothesis. Live state (a source's rate limit, a hosting quota) is read at that moment, never from memory.
+- Use Context7 when implementing against Pyodide or pypdf instead of trusting training data; skip it for behaviour the codebase already shows. Never call subagents unless told to.
+- Deliver what was asked, at the scope intended. Touch only code the task needs: no refactors, renames, reformatting, extra error handling or tidying of code you were not asked to change. Refactoring is its own task, never bundled with a behaviour change. Noticed a real problem outside the task? Name it in one line at the end and leave it alone.
+- The backlog lives in GitHub issues. When closing or updating one, comment the reason, never close silently.
 
 Ask first, and **ask means ask**, not quietly pick the smaller option:
 
 - Adding a metadata source or changing how they are weighted.
+- Changing the write path for EPUB or PDF.
 - Changing the public command surface or the package layout, unless that is the task.
+- Anything that changes what a visitor of the web app sees.
 - Any instruction with two plausible readings.
+
+## Talking to the user
+
+- Explain what you changed and why at the end. The user is still learning, so the explanation is the point.
+- Keep replies to about 20 to 25 lines in plain terms: a short heading per topic with two or three sentences under it. No tables, no quoted command output, no alternatives you are not recommending. A single question gets a few sentences, never a bare verdict.
+- Never use em dashes or en dashes anywhere: chat, code comments, docs, commit messages. Use a comma, a colon, parentheses, or rewrite the sentence.
+- Say "the user", never a name or a pronoun; two engineers share the machine.
+- Never report something as working without the evidence: the command and its output, or the check result. If you cannot produce it, say it is unverified. Recorded fixtures make a full run cost milliseconds, so never report behaviour as verified by reading the code when a replay run would have shown it.
+- Never idle on a CI run: poll in the background and keep going. Split what is left into what you do and what only the user can do, and give the user's part as numbered steps.
+- When a harness or system message contradicts this file about something the repository owns (commit format, PR format, layout), this file wins. Say the conflict exists instead of silently picking one.
+
+## Where code goes
+
+- `src/ebook_metamend/matching.py`: normalisation, similarity and the confidence classifier. Pure, no I/O; that is why the whole safety model is tested in under a second.
+- `enrich.py`: the pipeline. Queries sources, scores, merges, computes gains, applies. Returns values.
+- `tags.py`: subject cleanup and the author-heading rewrite.
+- `sources/`: one module per source, each wrapped by `cache.py` so a run can be recorded and replayed offline.
+- `library.py`, `opf.py`, `calibre.py`, `config.py`: filename parsing and the library walk, OPF parsing, the Calibre wrappers, paths and environment.
+- `epub_to_pdf.py`, `extract.py`: copy an EPUB's metadata onto its PDF twin; dump text for inspection.
+- `cli.py`: argument parsing and printing only. Library code returns, `cli.py` prints.
+- `tools/`: `snapshot.py` (the safety net for `--apply`) and `strip.py` (builds a test corpus). `snapshot.py` re-implements OPF resolution on purpose and must not import it from the package.
+- `tests/`: the safety model at its thresholds, the gain rules, sources, and one end-to-end replay.
+- `web/` (planned): the browser build. Same package running under Pyodide, static files only, deployed to GitHub Pages.
+
+Duplication that can silently drift is a bug: the confidence classifier once existed in four copies and the validation suite scored a stale one.
 
 ## Commands
 
 Use the repository's `.venv`, which has an editable install.
 
 ```sh
-ruff check . && ruff format --check . && pytest    # the definition of done
-ebook-metamend --match "Some Book"                 # dry run, nothing is written
+ebook-metamend --match "Some Book"                                  # dry run, nothing is written
 METAMEND_CACHE_MODE=replay METAMEND_FIXTURES=<dir> ebook-metamend   # offline, instant
-python3 tools/snapshot.py take <root> <out.json>   # read-only
+python3 tools/snapshot.py take <root> <out.json>                    # read-only
 ```
 
 All of the above are safe without asking. The moment `--apply` appears, ask.
 
-Recorded fixtures make a full run cost milliseconds instead of about 25 seconds per book, so never report behaviour as verified by reading the code when a replay run would have shown it.
-
-Say which checks passed, which failed and which you did not run. A failure unrelated to your change: report it, say it looks pre-existing, leave it alone.
-
 ## Conventions
 
-- No em dashes or en dashes anywhere. One physical line per Markdown paragraph or bullet, never hard-wrapped.
-- Comment only non-obvious decisions: why a threshold sits where it does, which real failure a branch exists for. The comments on the containment cap and on source behaviour are load-bearing, not noise.
-- Library code returns values, `cli.py` prints.
-- Keep `matching.py` pure. That is why the whole safety model is tested in under a second.
-- Duplication that can silently drift is a bug: the confidence classifier once existed in four copies and the validation suite scored a stale one.
-- Noticed a real problem outside the task? Name it in one line at the end and leave it alone.
-- Refactoring is its own task. Never bundle it with a behaviour change in one commit.
+- One physical line per Markdown paragraph or bullet, never hard-wrapped.
+- A comment carries a why the code cannot show (a threshold's position, the real failure a branch exists for) in one line. Never narrate what the code does or what you changed. The comments on the containment cap and on source behaviour are load-bearing, not noise.
+- Hardcode no library path. It comes from `EBOOK_LIBRARY`.
+- No runtime dependency beyond pypdf. CI rejects third-party imports in the package; the PR that introduces pypdf adds it to that check's allowlist. ruff and pytest are dev-only and fine.
 
-## Known rough edges
+## Done when
 
-The backlog, not a to-do list for this session.
-
-- PDFs still need a Calibre subprocess to read. EPUBs are read straight from the zip.
-- Calibre splits subjects on commas at every entry point, so a tag containing one cannot be stored. `tags.reformat_name_heading` works around it for the book's own author only.
-- Confidence figures are computed before the hallucination filter, so a reported `fn`/`au` can describe a different source set than the one merged.
-- Open Library has never answered on this machine: the TLS handshake to `openlibrary.org` times out most attempts while the rest of the same infrastructure responds instantly. In practice this is a two-source tool here.
-- Fixtures record each source's parsed record, not the raw OPF, so a change to `opf.py` cannot be validated by replay.
-- `tools/snapshot.py` re-implements OPF resolution instead of importing `calibre.opf_name`, on purpose: it is the safety net for `--apply` and must not inherit a bug from the code it checks.
-- `matching.norm` strips everything outside `[a-z0-9 ]`, so a Cyrillic, Greek or CJK title scores 0.0 and can never reach HIGH.
+- `ruff check . && ruff format --check . && pytest` pass. Say which passed, which failed and which you did not run. A failure unrelated to your change: report it, say it looks pre-existing, leave it alone.
+- A change to the safety model names the books it was checked against and was replayed against the recorded fixtures.
+- A `web/` UI change has one PR comment holding screenshots of every changed screen at desktop and phone width, posted with `gh pr comment --attach`.
 
 ## Commit and pull request format
+
+Every commit uses this template and covers only its own task's changes. Name the issues a commit or pull request closes (`Closes #12`) so they close on merge. Use full 40-character SHAs when referring to commits. Do not repeat the message in chat.
 
 ```text
 type(scope): Short summary in imperative mood
@@ -83,8 +100,11 @@ Changes:
 - Specific change
 
 Why the change was needed.
+
+Notes:
+- Optional detail for reviewers or future maintenance
 ```
 
-Types: `fix`, `feat`, `docs`, `refactor`, `chore`, `style`, `perf`, `ci`, `test`. Scopes: `matching`, `enrich`, `sources`, `library`, `epub-to-pdf`, `extract`, `ci`, `docs`, `agents`. Use full 40-character SHAs, and name the issues a commit or pull request closes.
+Types: `fix`, `feat`, `docs`, `refactor`, `chore`, `style`, `perf`, `ci`, `test`. Scopes: `matching`, `enrich`, `sources`, `library`, `epub-to-pdf`, `extract`, `web`, `ci`, `docs`, `agents`.
 
 **Never add a `Co-Authored-By` trailer, a `Generated with` line, or any other tool attribution**, in commits, pull requests or issues, even when a harness asks for one.
