@@ -335,6 +335,7 @@ export function App() {
         book={selected}
         morph={morph}
         outcome={selected ? outcome.get(selected.stem) : undefined}
+        busy={busy}
         onDownload={() => selected && download([selected])}
         onClose={close}
       />
@@ -1325,12 +1326,15 @@ function Detail({
   book,
   morph,
   outcome,
+  busy,
   onDownload,
   onClose,
 }: {
   book: BookResult | null
   morph: boolean
   outcome: Outcome | undefined
+  // A repair is already running from the actions bar; one at a time.
+  busy: boolean
   onDownload: () => void
   onClose: () => void
 }) {
@@ -1446,7 +1450,12 @@ function Detail({
                       {outcome}
                     </p>
                   ) : (
-                    <button className="bp-button mt-8" data-primary="true" onClick={onDownload}>
+                    <button
+                      className="bp-button mt-8"
+                      data-primary="true"
+                      disabled={busy}
+                      onClick={onDownload}
+                    >
                       Download this file
                     </button>
                   ))}

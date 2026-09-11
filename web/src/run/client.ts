@@ -81,11 +81,14 @@ export class Client {
     })
   }
 
+  // The id of the propose request in flight, for telling its answers apart.
+  live = 0
+
   propose(stem: string, files: FileBytes) {
-    return this.request<Extract<Reply, { type: 'proposed' }>>(
-      (id) => ({ type: 'propose', id, stem, files }),
-      Object.values(files),
-    )
+    return this.request<Extract<Reply, { type: 'proposed' }>>((id) => {
+      this.live = id
+      return { type: 'propose', id, stem, files }
+    }, Object.values(files))
   }
 
   apply(

@@ -114,9 +114,6 @@ def propose(
     return {
         **proposal.to_dict(),
         'stem': stem,
-        # Catalogues shelved after repeated failures, so the page can say why
-        # a row has fewer witnesses than it should.
-        'unavailable': sorted(enrich.unavailable_sources),
         # Paths inside the worker's file system mean nothing to the page.
         'files': {ext: os.path.basename(path) for ext, path in proposal.files.items()},
         'current': proposal.current,
@@ -159,6 +156,12 @@ def apply(
         'files': written,
         'writes': [{'ext': ext, 'ok': ok, 'reason': reason} for ext, ok, reason in record.writes],
     }
+
+
+def unavailable() -> list[str]:
+    """Catalogues shelved after repeated failures, so the page can say why a
+    row has fewer witnesses than it should, even when no source answered."""
+    return sorted(enrich.unavailable_sources)
 
 
 def pause_after() -> float:

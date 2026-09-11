@@ -5,6 +5,8 @@
 import { loadPyodide, type PyodideAPI } from 'pyodide'
 import type { PyProxy } from 'pyodide/ffi'
 
+import type { SourceName } from '@/types'
+
 import type { FileBytes, FromWorker, ToWorker } from './protocol'
 
 // The interpreter, then the two wheels the site ships beside it.
@@ -115,7 +117,7 @@ scope.onmessage = async (event: MessageEvent<ToWorker>) => {
       case 'propose': {
         const fn = py.globals.get('propose')
         const onAnswer = (source: string, _hadIt: boolean) =>
-          post({ type: 'answer', stem: message.stem, source: source as never })
+          post({ type: 'answer', id: message.id, stem: message.stem, source: source as never })
         const result = fn(message.stem, views(message.files), onAnswer)
         fn.destroy()
         const proposal = result === undefined ? null : result.toJs(toPlain)
@@ -124,7 +126,9 @@ scope.onmessage = async (event: MessageEvent<ToWorker>) => {
         const facts = factsProxy.toJs(toPlain)
         factsProxy.destroy()
         const pause: number = web.pause_after()
-        const unavailable = proposal?.unavailable ?? []
+        const shelved = web.unavailable()
+        const unavailable = shelved.toJs() as SourceName[]
+        shelved.destroy()
         post({ type: 'proposed', id: message.id, facts, proposal, pause, unavailable })
         return
       }

@@ -90,7 +90,7 @@ class TestPropose:
         assert result['unreadable'] is False
         assert {s['name'] for s in result['scores']} == {'apple', 'openlib', 'inventaire'}
         assert heard == ['openlib', 'apple', 'inventaire']
-        assert result['unavailable'] == []
+        assert web.unavailable() == []
         assert not any(root.rglob('*'))
 
     def test_a_folder_in_the_stem_is_kept_apart(self, tmp_path):

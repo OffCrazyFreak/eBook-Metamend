@@ -23,7 +23,8 @@ export type FromWorker =
   | { type: 'loading'; progress: number; label: string }
   | { type: 'ready' }
   | { type: 'failed'; message: string }
-  | { type: 'answer'; stem: string; source: SourceName }
+  // id names the propose request, so an answer for a stopped one can be told apart.
+  | { type: 'answer'; id: number; stem: string; source: SourceName }
   | {
       type: 'proposed'
       id: number

@@ -58,9 +58,6 @@ export function useRun(options: { failLoad?: boolean } = {}) {
   const folders = useRef<FileSystemDirectoryHandle[]>([])
   // Bumped on every start, stop and reset so a stale run's events are dropped.
   const token = useRef(0)
-  // The book the live run is asking about; a worker answer for any other stem
-  // belongs to a request that was stopped and is dropped.
-  const querying = useRef<string | null>(null)
   const readyAt = useRef(0)
 
   const handle = useCallback((event: RunEvent) => {
@@ -95,7 +92,8 @@ export function useRun(options: { failLoad?: boolean } = {}) {
     if (client.current) return client.current
     client.current = new Client((event) => {
       if (event.type === 'ready') return
-      if (event.type === 'answer' && event.stem !== querying.current) return
+      // An answer for a request that was stopped belongs to no row on screen.
+      if (event.type === 'answer' && event.id !== client.current?.live) return
       handle(event)
     })
     return client.current
@@ -131,7 +129,6 @@ export function useRun(options: { failLoad?: boolean } = {}) {
       for (const row of rows) {
         if (token.current !== mine) return
         const book = intake.current.get(row.stem)!
-        querying.current = row.stem
         handle({ type: 'querying', stem: row.stem })
         let result: BookResult
         let pause = 0
@@ -146,7 +143,6 @@ export function useRun(options: { failLoad?: boolean } = {}) {
           result = { ...row, status: 'done', proposal: unreadable(row, describe(error)) }
         }
         if (token.current !== mine) return
-        querying.current = null
         handle({ type: 'book', result })
         if (unavailable.length) setState((prev) => ({ ...prev, unavailable }))
         if (pause > 0 && row !== rows[rows.length - 1]) await sleep(pause * 1000)
@@ -192,7 +188,8 @@ export function useRun(options: { failLoad?: boolean } = {}) {
   const stop = useCallback(() => {
     simulation.current?.cancel()
     ++token.current
-    querying.current = null
+    // Whatever the worker is still answering belongs to nobody now.
+    if (client.current) client.current.live = 0
     setState((prev) => ({
       ...prev,
       phase: 'done',
