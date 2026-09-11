@@ -45,6 +45,22 @@ class TestNorm:
             ('  Messy   Spacing  ', 'messy spacing'),
             ('', ''),
             (None, ''),
+            # Letters of every script survive; the ASCII-only version emptied these.
+            ('Война и мир', 'война и мир'),
+            ('Ο Ξένος', 'ο ξένοσ'),
+            ('ノルウェイの森', 'ノルウェイの森'),
+            # Accents on Latin letters fold rather than vanish, so the letter
+            # under them stays.
+            ('Café', 'cafe'),
+            ('Straße', 'strasse'),
+            ('snake_case', 'snake case'),
+            # Marks outside Latin are letters in their own right and stay.
+            ('Герой', 'герой'),
+            ('ザ・ゴール', 'ザ ゴール'),
+            ('किताब', 'किताब'),
+            # A French title, not an English article with a stray mark.
+            ('Thé vert', 'the vert'),
+            ("'The Hobbit'", 'hobbit'),
         ],
     )
     def test_normalises(self, raw, expected):
@@ -67,6 +83,44 @@ class TestSim:
 
     def test_unrelated_titles_score_below_the_weak_threshold(self):
         assert sim('Atomic Habits', 'War and Peace') < TITLE_WEAK
+
+    @pytest.mark.parametrize(
+        'title', ['Война и мир', 'Ο Ξένος', 'ノルウェイの森', 'Les Misérables', 'Brontë']
+    )
+    def test_a_title_in_any_script_matches_itself(self, title):
+        assert sim(title, title) == 1.0
+
+    @pytest.mark.parametrize(
+        ('accented', 'plain'),
+        [('Émile', 'Emile'), ('Café', 'Cafe'), ('Brontë', 'Bronte'), ('Straße', 'Strasse')],
+    )
+    def test_accented_and_plain_spellings_are_the_same_title(self, accented, plain):
+        assert sim(accented, plain) == 1.0
+
+    @pytest.mark.parametrize(
+        ('one', 'other'),
+        [
+            ('Война и мир', 'Анна Каренина'),
+            ('Ο Ξένος', 'Η Πανούκλα'),
+            ('ノルウェイの森', '海辺のカフカ'),
+        ],
+    )
+    def test_unrelated_titles_in_other_scripts_stay_below_the_weak_threshold(self, one, other):
+        assert sim(one, other) < TITLE_WEAK
+
+    @pytest.mark.parametrize(
+        ('one', 'other'),
+        [
+            # й and и, dakuten, Devanagari vowel signs: different words.
+            ('Герой нашего времени', 'Герои нашего времени'),
+            ('ザ・ゴール', 'ザ・コール'),
+            ('バス', 'パス'),
+            ('किताब', 'कुतुब'),
+        ],
+    )
+    def test_a_mark_outside_latin_still_tells_two_words_apart(self, one, other):
+        assert norm(one) != norm(other)
+        assert sim(one, other) < 1.0
 
     @pytest.mark.parametrize(
         ('short', 'full'),
