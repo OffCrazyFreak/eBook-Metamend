@@ -18,6 +18,7 @@ import {
   hasFiles,
   intakeFromDrop,
   intakeFromFileList,
+  intakeFromFilePicker,
   intakeFromPicker,
   type Intake as IntakeResult,
 } from '@/intake'
@@ -295,6 +296,7 @@ export function App() {
                 phase={state.phase}
                 elapsedMs={state.elapsedMs}
                 others={others}
+                sample={state.sample}
                 pressed={matchingPreset(selection, state.books)}
                 onPreset={choose}
                 onJump={jump}
@@ -385,7 +387,7 @@ function Header({
 }) {
   return (
     <header className="bp-bar sticky top-0 z-40" data-scrolled={scrolled}>
-      <div className="mx-auto flex h-12 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 md:h-14 md:px-10">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 md:h-[4.5rem] md:px-10">
         <div className="flex h-full items-center gap-4">
           <a href="#top" className="flex h-full items-center">
             {showLockup ? <Lockup size="bar" /> : <span aria-hidden="true" />}
@@ -479,12 +481,12 @@ function Lockup({ size }: { size: 'hero' | 'bar' }) {
     <motion.div
       layoutId="lockup"
       layout
-      className={hero ? 'flex items-center gap-5 lg:gap-6' : 'flex items-center gap-2.5'}
+      className={hero ? 'flex items-center gap-5 lg:gap-6' : 'flex items-center gap-3'}
       transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 260, damping: 30 }}
     >
       <motion.div
         layout
-        className={`bp-mark relative aspect-square shrink-0 ${hero ? 'w-40' : 'w-9 md:w-10'}`}
+        className={`bp-mark relative aspect-square shrink-0 ${hero ? 'w-40' : 'w-[3.375rem] md:w-[3.75rem]'}`}
         aria-hidden="true"
       >
         <img src={mark} alt="" className="bp-mark-image h-full w-full" />
@@ -503,7 +505,7 @@ function Lockup({ size }: { size: 'hero' | 'bar' }) {
         layout
         src={wordmark}
         alt="eBook Metamend"
-        className={hero ? 'hidden h-20 w-auto lg:block' : 'h-5 w-auto md:h-6'}
+        className={hero ? 'hidden h-20 w-auto lg:block' : 'h-10 w-auto md:h-12'}
       />
     </motion.div>
   )
@@ -575,14 +577,23 @@ function Intake({
     onStart(await intakeFromDrop(event))
   }
 
-  // The folder picker that hands back a writable handle, where the browser has
-  // one; the plain directory input elsewhere.
+  // The pickers that hand back handles, where the browser has them, so files
+  // chosen either way can be written back; the plain inputs elsewhere.
   async function chooseFolder() {
     if (!canWriteInPlace) {
       folderInput.current?.click()
       return
     }
     const picked = await intakeFromPicker()
+    if (picked) onStart(picked)
+  }
+
+  async function chooseFiles() {
+    if (!canWriteInPlace) {
+      fileInput.current?.click()
+      return
+    }
+    const picked = await intakeFromFilePicker()
     if (picked) onStart(picked)
   }
 
@@ -627,10 +638,10 @@ function Intake({
           <Crosshair aim={aim} live={over} />
           <span className="bp-dim w-28 self-start">intake</span>
           <p className="bp-display text-base sm:text-lg md:text-xl">
-            {over || pageOver ? 'Release to start the dry run' : 'Drop files or a folder here'}
+            {over || pageOver ? 'Release to start checking' : 'Drop files or a folder here'}
           </p>
           <div className="flex flex-wrap justify-center gap-2">
-            <button className="bp-button" onClick={() => fileInput.current?.click()}>
+            <button className="bp-button" onClick={() => void chooseFiles()}>
               Choose files
             </button>
             <button className="bp-button" onClick={() => void chooseFolder()}>
@@ -792,12 +803,29 @@ function Loading({
   )
 }
 
+// The label over the count says what has happened to the files so far. "Dry
+// run" read as a mode the visitor had chosen, when it is only the state before
+// anything is written.
+function stage(
+  phase: 'running' | 'done',
+  counts: { written: number; downloaded: number },
+  sample: boolean,
+): string {
+  if (phase === 'running') return 'checking'
+  // The invented sample pretends to write; there is no folder for it to touch.
+  if (sample && (counts.written > 0 || counts.downloaded > 0)) return 'sample, nothing was written'
+  if (counts.written > 0) return 'written into the folder'
+  if (counts.downloaded > 0) return 'repairs downloaded'
+  return 'checked, nothing written yet'
+}
+
 function Summary({
   books,
   counts,
   phase,
   elapsedMs,
   others,
+  sample,
   pressed,
   onPreset,
   onJump,
@@ -814,6 +842,7 @@ function Summary({
   phase: 'running' | 'done'
   elapsedMs: number
   others: number
+  sample: boolean
   pressed: Preset | null
   onPreset: (name: Preset) => void
   onJump: (stem: string) => void
@@ -823,7 +852,7 @@ function Summary({
     <section className="mt-10" aria-live="polite">
       <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
         <div>
-          <span className="bp-dim w-64">{phase === 'done' ? 'dry run complete' : 'dry run'}</span>
+          <span className="bp-dim w-64">{stage(phase, counts, sample)}</span>
           <p className="bp-display mt-4 text-3xl md:text-4xl">
             <span className="bp-mono">{counts.done}</span> of{' '}
             <span className="bp-mono">{counts.total}</span> books checked

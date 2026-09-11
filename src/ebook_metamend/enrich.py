@@ -309,6 +309,16 @@ def merge(
     }
 
 
+_MARKUP = re.compile(r'<[^>]+>|&[#\w]+;')
+
+
+def _text_length(description: str) -> int:
+    """Length of the words, not the markup. Descriptions arrive as HTML from
+    some sources and as text from others, and a blurb wrapped in tags is not
+    longer in any sense that should replace the same blurb without them."""
+    return len(' '.join(_MARKUP.sub(' ', description).split()))
+
+
 def compute_gains(merged: dict[str, Any], current: dict[str, Any], conf: str) -> dict[str, Any]:
     """Only what the book is actually missing, or what is strictly better.
 
@@ -332,7 +342,7 @@ def compute_gains(merged: dict[str, Any], current: dict[str, Any], conf: str) ->
         existing = current.get('description') or ''
         if not existing:
             gains['description'] = merged['description']
-        elif conf == 'HIGH' and len(merged['description']) > len(existing):
+        elif conf == 'HIGH' and _text_length(merged['description']) > _text_length(existing):
             gains['description'] = merged['description']
     if identified and merged['isbn'] and not current.get('isbn'):
         gains['isbn'] = merged['isbn']

@@ -46,11 +46,25 @@ def _entities(uris: list[str]) -> dict[str, Any]:
     return entities
 
 
-def _label(entity: dict[str, Any] | None) -> str:
+#: The labels a tag may carry: English, or Wikidata's "mul" for names that are
+#: the same in every language. A subject labelled only in another language
+#: would land as a foreign tag in an English library.
+TAG_LANGUAGES = ('en', 'mul')
+
+
+def _label(entity: dict[str, Any] | None, *, any_language: bool) -> str:
+    """An entity's name. Authors may fall back to any language, since a
+    person's name is mostly the same everywhere and the author score needs
+    something to compare; tags may not."""
     if not entity:
         return ''
     labels = entity.get('labels') or {}
-    return (labels.get('en') or next(iter(labels.values()), '')).strip()
+    for lang in TAG_LANGUAGES:
+        if labels.get(lang):
+            return labels[lang].strip()
+    if any_language:
+        return next(iter(labels.values()), '').strip()
+    return ''
 
 
 def _claim(entity: dict[str, Any], prop: str) -> list[str]:
@@ -81,7 +95,8 @@ def fetch_inventaire(title: str, author: str) -> dict[str, Any] | None:
     labels = _entities(sorted(set(wanted)))
 
     def names(work: dict[str, Any], prop: str) -> list[str]:
-        return [n for n in (_label(labels.get(uri)) for uri in _claim(work, prop)) if n]
+        found = (_label(labels.get(uri), any_language=prop == AUTHOR) for uri in _claim(work, prop))
+        return [n for n in found if n]
 
     best_score, best_hit, best_work = None, None, None
     for title_score, hit in candidates:

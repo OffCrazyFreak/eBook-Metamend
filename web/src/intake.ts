@@ -40,9 +40,10 @@ export function intakeFromFileList(files: FileList | null): Intake {
   )
 }
 
-// The folder picker on browsers that have it: the handle it returns is what
-// lets repairs go back into the same files. Read access only at this point;
+// The pickers on browsers that have them: the handles they return are what
+// let repairs go back into the same files. Read access only at this point;
 // the dry run needs nothing more, and write access is asked for on Write.
+// Closing a picker resolves to null; it is not an error worth a line.
 export async function intakeFromPicker(): Promise<Intake | null> {
   if (!canWriteInPlace) return null
   try {
@@ -51,7 +52,29 @@ export async function intakeFromPicker(): Promise<Intake | null> {
     await walkHandle(folder, `${folder.name}/`, files)
     return sortIntake(files, [folder])
   } catch (error) {
-    // Closing the picker is not an error worth a line.
+    if (error instanceof DOMException && error.name === 'AbortError') return null
+    throw error
+  }
+}
+
+export async function intakeFromFilePicker(): Promise<Intake | null> {
+  if (!canWriteInPlace) return null
+  try {
+    const handles = await window.showOpenFilePicker({
+      multiple: true,
+      types: [
+        {
+          description: 'Ebooks',
+          accept: { 'application/epub+zip': ['.epub'], 'application/pdf': ['.pdf'] },
+        },
+      ],
+    })
+    const files: IntakeFile[] = []
+    for (const handle of handles) {
+      files.push({ path: handle.name, file: await handle.getFile(), handle })
+    }
+    return sortIntake(files)
+  } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return null
     throw error
   }
