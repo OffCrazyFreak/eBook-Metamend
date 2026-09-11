@@ -51,6 +51,20 @@ export function App() {
     },
     [morph],
   )
+  const [flash, setFlash] = useState<string | null>(null)
+  const jump = useCallback(
+    (stem: string) => {
+      setFilter('all')
+      setFlash(stem)
+      requestAnimationFrame(() => {
+        document
+          .querySelector(`[data-stem="${CSS.escape(stem)}"]`)
+          ?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
+      })
+      window.setTimeout(() => setFlash((f) => (f === stem ? null : f)), 1600)
+    },
+    [reduced],
+  )
   const close = useCallback(() => {
     if (!morph) {
       setSelected(null)
@@ -97,11 +111,13 @@ export function App() {
                 elapsedMs={state.elapsedMs}
                 filter={filter}
                 onFilter={setFilter}
+                onJump={jump}
               />
               <Results
                 books={visible}
                 active={state.active}
                 origin={selected === null ? origin : null}
+                flash={flash}
                 onSelect={open}
               />
               <Actions counts={counts} done={state.phase === 'done'} onReset={reset} />
@@ -219,7 +235,7 @@ function Lockup({ size }: { size: 'hero' | 'bar' }) {
     <motion.div
       layoutId="lockup"
       layout
-      className={hero ? 'flex items-end gap-5 lg:gap-6' : 'flex items-center gap-2.5'}
+      className={hero ? 'flex items-center gap-5 lg:gap-6' : 'flex items-center gap-2.5'}
       transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 260, damping: 30 }}
     >
       <motion.div
@@ -243,7 +259,7 @@ function Lockup({ size }: { size: 'hero' | 'bar' }) {
         layout
         src={wordmark}
         alt="eBook Metamend"
-        className={hero ? 'mb-6 hidden h-20 w-auto lg:block' : 'h-5 w-auto md:h-6'}
+        className={hero ? 'hidden h-20 w-auto lg:block' : 'h-5 w-auto md:h-6'}
       />
     </motion.div>
   )
@@ -406,6 +422,7 @@ function Summary({
   elapsedMs,
   filter,
   onFilter,
+  onJump,
 }: {
   books: BookResult[]
   counts: { done: number; total: number; high: number; writes: number }
@@ -413,7 +430,9 @@ function Summary({
   elapsedMs: number
   filter: 'all' | 'writes'
   onFilter: (f: 'all' | 'writes') => void
+  onJump: (stem: string) => void
 }) {
+  const [hover, setHover] = useState<number | null>(null)
   return (
     <section className="mt-10" aria-live="polite">
       <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
@@ -450,14 +469,39 @@ function Summary({
 
       {/* One segment per book, filled in the verdict's tone as it lands; reads as
           the run's summary once it is over. */}
-      <ol className="mt-6 flex h-2 gap-[2px]" aria-label="Progress by book">
-        {books.map((b) => (
-          <li
-            key={b.stem}
-            className="bp-segment flex-1"
-            data-verdict={b.status === 'done' ? verdict(b) : 'PENDING'}
-          />
+      <ol className="relative mt-6 flex h-2 gap-[2px]" aria-label="Progress by book">
+        {books.map((b, i) => (
+          <li key={b.stem} className="relative flex-1">
+            <button
+              type="button"
+              className="bp-segment block h-full w-full"
+              data-verdict={b.status === 'done' ? verdict(b) : 'PENDING'}
+              aria-label={`${b.facts.title}: ${b.status === 'done' ? VERDICT_LABEL[verdict(b)] : 'not checked yet'}`}
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(null)}
+              onFocus={() => setHover(i)}
+              onBlur={() => setHover(null)}
+              onClick={() => onJump(b.stem)}
+            />
+          </li>
         ))}
+        {hover !== null && books[hover] && (
+          <span
+            role="presentation"
+            className="bp-mono bp-panel pointer-events-none absolute bottom-full mb-2 px-2 py-1 text-xs whitespace-nowrap text-[var(--bp-ink)]"
+            style={{
+              left: `${((hover + 0.5) / books.length) * 100}%`,
+              transform:
+                hover < books.length / 4
+                  ? 'translateX(-0.5rem)'
+                  : hover > (books.length * 3) / 4
+                    ? 'translateX(calc(-100% + 0.5rem))'
+                    : 'translateX(-50%)',
+            }}
+          >
+            {books[hover].facts.title}
+          </span>
+        )}
       </ol>
     </section>
   )
@@ -467,6 +511,7 @@ function Results({
   books,
   active,
   origin,
+  flash,
   onSelect,
 }: {
   books: BookResult[]
@@ -474,6 +519,8 @@ function Results({
   // The row the open dialog grew out of; it carries the view transition name
   // until the dialog is up, and again while the dialog shrinks back into it.
   origin: string | null
+  // The row a segment click jumped to; it flashes its rule once.
+  flash: string | null
   onSelect: (b: BookResult) => void
 }) {
   const reduced = useReducedMotion()
@@ -486,6 +533,11 @@ function Results({
         <span className="hidden md:block">gains</span>
         <span className="text-right">verdict</span>
       </li>
+      {books.length === 0 && (
+        <li className="bp-row bp-mono py-4 text-xs text-[var(--bp-muted)]">
+          Nothing would be written. No book reached HIGH with a field to add.
+        </li>
+      )}
       <AnimatePresence initial={false}>
         {books.map((book, i) => {
           const v = verdict(book)
@@ -495,6 +547,8 @@ function Results({
               key={book.stem}
               layout={!reduced}
               className="bp-row"
+              data-stem={book.stem}
+              data-flash={flash === book.stem ? 'true' : undefined}
               data-inking={done && !reduced ? 'true' : undefined}
               initial={reduced ? false : { clipPath: 'inset(0 100% 0 0)' }}
               animate={{ clipPath: 'inset(0 0% 0 0)' }}

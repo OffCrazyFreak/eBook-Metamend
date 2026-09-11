@@ -338,6 +338,22 @@ g:focus-visible > .bp-node-dim {
 .bp-row-button:focus-visible::before {
   transform: scaleY(1);
 }
+.bp-row[data-flash='true'] > .bp-row-button::before {
+  animation: bp-flash 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes bp-flash {
+  0% {
+    transform: scaleY(0);
+  }
+  15%,
+  75% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
+}
 .bp-row-title {
   transition: color 180ms;
 }
@@ -432,6 +448,10 @@ g:focus-visible > .bp-node-dim {
   .bp-row-button::before,
   .bp-row-title {
     transition: none;
+  }
+  .bp-row[data-flash='true'] > .bp-row-button::before {
+    animation: none;
+    transform: scaleY(1);
   }
   .bp-button:hover,
   .bp-button:focus-visible {
@@ -529,18 +549,19 @@ g:focus-visible > .bp-node-dim {
     stroke-dashoffset: 1;
     opacity: 1;
   }
-  30% {
+  11% {
     stroke-dashoffset: 0;
     opacity: 1;
   }
-  65% {
+  24% {
     stroke-dashoffset: 0;
     opacity: 1;
   }
-  85% {
+  31% {
     stroke-dashoffset: -1;
     opacity: 0.6;
   }
+  33.3%,
   100% {
     stroke-dashoffset: -1;
     opacity: 0;
