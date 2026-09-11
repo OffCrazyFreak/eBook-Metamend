@@ -193,7 +193,7 @@ export function App() {
         setOutcome((prev) => new Map([...prev, ...result.outcomes]))
         setTrouble(result.failures)
       } catch (error) {
-        // A refused permission or a failed bundle must say so, not look like nothing happened.
+        // A refused permission or a failed zip must say so, not look like nothing happened.
         setTrouble([error instanceof Error ? error.message : String(error)])
       } finally {
         setBusy(false)

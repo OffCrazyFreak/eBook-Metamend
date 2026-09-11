@@ -209,7 +209,6 @@ Working, and used on a real library of a few hundred books. Packaged as a `src/`
 
 - Name headings are rewritten into a comma-free form (`tags.reformat_name_heading`) on purpose: the writers store commas fine, but a Calibre library splits every subject on commas when it imports the file
 - Open Library times out under rapid queries more often than it should
-- In the web version, a download of many files is zipped in memory; a large batch is better written back in place or downloaded in smaller selections
 
 ## Contributing
 

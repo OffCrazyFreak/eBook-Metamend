@@ -20,7 +20,7 @@ Nothing large enters git: the wheels and the copied interpreter are build produc
 
 The worker holds one book's bytes at a time. The page keeps the list; each book is sent over, written into the worker's in-memory file system, proposed or repaired, read back, and deleted. A folder of three hundred books never sits in memory at once. Pacing between books happens in JavaScript with a timer, from the same back-off the desktop pacer computes, because Python cannot sleep inside a worker without headers Pages cannot set.
 
-The one place this does not hold: a download of more than five files is zipped in memory, so a very large batch is better written back in place or downloaded in smaller selections.
+A download of more than five files is one zip, built on the page by `client-zip` as the books are repaired: each repaired book is pulled into the archive and dropped, and the archive itself is a Blob the browser may keep on disk (Chromium pages blob storage out past a share of RAM, Firefox writes a response body to a temporary file past one megabyte), so the worker's memory does not grow with the selection.
 
 ## Catalogues from the browser
 
@@ -43,7 +43,7 @@ Every verdict comes from `enrich.propose`, unchanged. The row shows which catalo
 
 ## Fonts
 
-Chakra Petch (display), IBM Plex Sans (body) and IBM Plex Mono (figures), all under the SIL Open Font License 1.1, self-hosted through the `@fontsource` packages. Pyodide is MPL-2.0. No font or script is fetched from a third party.
+Chakra Petch (display), IBM Plex Sans (body) and IBM Plex Mono (figures), all under the SIL Open Font License 1.1, self-hosted through the `@fontsource` packages. Pyodide is MPL-2.0 and client-zip is MIT. No font or script is fetched from a third party.
 
 ## Checking a change
 

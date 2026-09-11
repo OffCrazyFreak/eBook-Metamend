@@ -7,10 +7,8 @@ knows about Pyodide beyond ``install_transport``; the rest runs under pytest.
 
 from __future__ import annotations
 
-import io
 import json
 import os
-import zipfile
 from collections.abc import Callable
 from typing import Any
 
@@ -167,16 +165,3 @@ def unavailable() -> list[str]:
 def pause_after() -> float:
     """Seconds the worker should wait before the next book."""
     return enrich.pause_after(WEB_SOURCES)
-
-
-def bundle(files: dict[str, bytes]) -> bytes:
-    """One zip of repaired files, for a browser that cannot write into a folder.
-
-    Stored, not deflated: EPUBs and PDFs are already compressed, and the
-    visitor waits on this.
-    """
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_STORED) as archive:
-        for name, data in files.items():
-            archive.writestr(name, data)
-    return buffer.getvalue()

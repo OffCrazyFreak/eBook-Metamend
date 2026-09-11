@@ -1,3 +1,4 @@
+import { downloadZip } from 'client-zip'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { groupBooks, type Intake, type IntakeBook } from '@/intake'
@@ -218,37 +219,47 @@ export function useRun(options: { failLoad?: boolean } = {}) {
         )
         if (!granted) return { outcomes, failures: ['Write access was not granted.'] }
       }
-      const loose: Record<string, ArrayBuffer> = {}
-      for (const b of books) {
-        const book = intake.current.get(b.stem)!
-        if (!b.proposal) continue
-        try {
-          const { files, writes } = await py.apply(b.stem, await bytesOf(book), b.proposal)
-          const failed = writes.filter((w) => !w.ok)
-          if (failed.length) {
-            failures.push(`${b.stem}: ${failed.map((w) => `${w.ext} ${w.reason}`).join(', ')}`)
-            continue
-          }
-          for (const [ext, data] of Object.entries(files) as [Extension, ArrayBuffer][]) {
-            const source = book.files[ext]!
-            if (mode === 'written') {
-              const writable = await source.handle!.createWritable()
-              await writable.write(data)
-              await writable.close()
-            } else {
-              loose[source.path] = data
+      const chosen = books.filter((b) => b.proposal)
+      // One book's bytes at a time: the zip pulls each book as it is written,
+      // so nothing is held for the whole selection.
+      async function* repaired(): AsyncGenerator<{ name: string; input: ArrayBuffer }> {
+        for (const b of chosen) {
+          const book = intake.current.get(b.stem)!
+          try {
+            const { files, writes } = await py.apply(b.stem, await bytesOf(book), b.proposal!)
+            const failed = writes.filter((w) => !w.ok)
+            if (failed.length) {
+              failures.push(`${b.stem}: ${failed.map((w) => `${w.ext} ${w.reason}`).join(', ')}`)
+              continue
             }
+            for (const [ext, data] of Object.entries(files) as [Extension, ArrayBuffer][]) {
+              const source = book.files[ext]!
+              if (mode === 'written') {
+                const writable = await source.handle!.createWritable()
+                await writable.write(data)
+                await writable.close()
+              } else {
+                yield { name: source.path, input: data }
+              }
+            }
+            outcomes.set(b.stem, mode)
+          } catch (error) {
+            failures.push(`${b.stem}: ${describe(error)}`)
           }
-          outcomes.set(b.stem, mode)
-        } catch (error) {
-          failures.push(`${b.stem}: ${describe(error)}`)
         }
       }
-      const names = Object.keys(loose)
-      if (names.length > LOOSE_DOWNLOADS) {
-        download('ebook-metamend-repaired.zip', await py.bundle(loose))
+      const count = chosen.reduce(
+        (n, b) => n + Object.keys(intake.current.get(b.stem)!.files).length,
+        0,
+      )
+      if (mode === 'downloaded' && count > LOOSE_DOWNLOADS) {
+        // A Response body becomes a Blob the browser may keep on disk, unlike an ArrayBuffer.
+        const zip = await downloadZip(repaired(), { buffersAreUTF8: true }).blob()
+        download('ebook-metamend-repaired.zip', zip)
       } else {
-        for (const name of names) download(name.slice(name.lastIndexOf('/') + 1), loose[name])
+        for await (const { name, input } of repaired()) {
+          download(name.slice(name.lastIndexOf('/') + 1), new Blob([input]))
+        }
       }
       return { outcomes, failures }
     },
@@ -339,8 +350,8 @@ async function requestWrite(
   return true
 }
 
-function download(name: string, data: ArrayBuffer) {
-  const url = URL.createObjectURL(new Blob([data]))
+function download(name: string, data: Blob) {
+  const url = URL.createObjectURL(data)
   const a = document.createElement('a')
   a.href = url
   a.download = name
