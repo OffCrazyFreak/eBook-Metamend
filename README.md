@@ -7,6 +7,8 @@
 
 **Repairs the metadata in an ebook library, without letting a metadata source lie to you.**
 
+**Web version:** [offcrazyfreak.github.io/eBook-Metamend](https://offcrazyfreak.github.io/eBook-Metamend/). Runs in the browser; files never leave it. The interface is in place and the Python wiring is next, so until then the page plays an invented sample.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB) ![Dependencies](https://img.shields.io/badge/dependencies-stdlib%20only-2ec50d) [![CI](https://github.com/OffCrazyFreak/eBook-Metamend/actions/workflows/ci.yml/badge.svg)](https://github.com/OffCrazyFreak/eBook-Metamend/actions/workflows/ci.yml)
 
 ## The problem

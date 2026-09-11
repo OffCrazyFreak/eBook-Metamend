@@ -33,6 +33,8 @@ export function useRun(
 ) {
   const [state, setState] = useState<RunState>(INITIAL)
   const simulation = useRef<Simulation | null>(null)
+  // When the books started being checked, so a stopped run can report its time.
+  const readyAt = useRef(0)
 
   const handle = useCallback((event: RunEvent) => {
     setState((prev) => {
@@ -47,6 +49,7 @@ export function useRun(
         case 'failed':
           return { ...prev, phase: 'failed', error: event.message }
         case 'ready':
+          readyAt.current = Date.now()
           return { ...prev, phase: 'running', books }
         case 'querying':
         case 'answer':
@@ -92,6 +95,7 @@ export function useRun(
       ...prev,
       phase: 'done',
       active: null,
+      elapsedMs: Date.now() - readyAt.current,
       books: prev.books.map((b) => (b.status === 'done' ? b : { ...b, status: 'skipped' })),
     }))
   }, [])

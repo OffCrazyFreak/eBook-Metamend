@@ -38,12 +38,14 @@ export function simulateRun(
     )
   })
   if (options.failLoad) {
-    at(loadingMs * 0.6, () =>
+    at(loadingMs * 0.6, () => {
+      // The later loading steps would otherwise pull the phase back out of failed.
+      timers.forEach((t) => window.clearTimeout(t))
       onEvent({
         type: 'failed',
         message: 'The Python runtime could not be fetched. Check the connection and try again.',
-      }),
-    )
+      })
+    })
     return { cancel: () => timers.forEach((t) => window.clearTimeout(t)) }
   }
   at(loadingMs, () => {
@@ -104,7 +106,7 @@ export function fromFileNames(names: string[]): BookResult[] {
     stems.set(stem, {
       ...template,
       stem,
-      facts: parseStem(stem),
+      facts: parseStem(stem.slice(stem.lastIndexOf('/') + 1)),
       files: [ext],
       status: 'pending',
       proposal: template.proposal ? { ...template.proposal, stem } : null,

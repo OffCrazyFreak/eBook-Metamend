@@ -188,15 +188,17 @@ export function App() {
   }, [pickedBooks])
   const [others, setOthers] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
-  // The sample plays when nothing was handed over; a handful of non-ebooks is
-  // not nothing, so that case gets a line instead of a run.
+  // Only the sample link may start a run with no files; an empty drop or an
+  // empty folder gets a line instead.
   const begin = useCallback(
     (intake: IntakeResult) => {
-      if (intake.books.length === 0 && intake.others > 0) {
+      if (intake.books.length === 0) {
         setNotice(
-          intake.others === 1
-            ? 'That file is not an EPUB or a PDF.'
-            : `None of those ${intake.others} files are EPUB or PDF.`,
+          intake.others === 0
+            ? 'Nothing to check: no files came through.'
+            : intake.others === 1
+              ? 'That file is not an EPUB or a PDF.'
+              : `None of those ${intake.others} files are EPUB or PDF.`,
         )
         return
       }
@@ -206,6 +208,11 @@ export function App() {
     },
     [start],
   )
+  const playSample = useCallback(() => {
+    setNotice(null)
+    setOthers(0)
+    start([])
+  }, [start])
   const restart = useCallback(() => {
     setSelection(DEFAULT_SELECTION)
     setOutcome(new Map())
@@ -239,7 +246,12 @@ export function App() {
         />
         <div className="mx-auto max-w-6xl px-4 pb-8 sm:px-6 md:px-10">
           {state.phase === 'idle' && (
-            <Hero onStart={begin} notice={notice} showLockup={heroHasLockup} />
+            <Hero
+              onStart={begin}
+              onSample={playSample}
+              notice={notice}
+              showLockup={heroHasLockup}
+            />
           )}
           {(state.phase === 'loading' || state.phase === 'failed') && (
             <Loading
@@ -379,10 +391,12 @@ function Header({
 // the remaining third.
 function Hero({
   onStart,
+  onSample,
   notice,
   showLockup,
 }: {
   onStart: (intake: IntakeResult) => void
+  onSample: () => void
   notice: string | null
   showLockup: boolean
 }) {
@@ -420,7 +434,7 @@ function Hero({
         </div>
       </div>
 
-      <Intake onStart={onStart} notice={notice} />
+      <Intake onStart={onStart} onSample={onSample} notice={notice} />
     </section>
   )
 }
@@ -472,9 +486,11 @@ function LockupSpace() {
 
 function Intake({
   onStart,
+  onSample,
   notice,
 }: {
   onStart: (intake: IntakeResult) => void
+  onSample: () => void
   notice: string | null
 }) {
   const [over, setOver] = useState(false)
@@ -607,10 +623,7 @@ function Intake({
       )}
       <p className="bp-mono mt-3 text-[11px] tracking-wider text-[var(--bp-muted)] uppercase sm:mt-4">
         No files to hand?{' '}
-        <button
-          className="bp-link underline underline-offset-4"
-          onClick={() => onStart({ books: [], others: 0 })}
-        >
+        <button className="bp-link underline underline-offset-4" onClick={onSample}>
           Play the invented sample
         </button>
       </p>
