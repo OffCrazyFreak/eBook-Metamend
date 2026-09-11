@@ -852,7 +852,7 @@ function Summary({
     <section className="mt-10" aria-live="polite">
       <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
         <div>
-          <span className="bp-dim w-64">{stage(phase, counts, sample)}</span>
+          <span className="bp-dim w-fit min-w-64">{stage(phase, counts, sample)}</span>
           <p className="bp-display mt-4 text-3xl md:text-4xl">
             <span className="bp-mono">{counts.done}</span> of{' '}
             <span className="bp-mono">{counts.total}</span> books checked
