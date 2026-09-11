@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .. import calibre, opf
+from . import cache
 from .errors import SourceUnavailable
 
 #: Calibre plugin names, as ``fetch-ebook-metadata -p`` expects them.
@@ -37,8 +38,11 @@ def require_plugin(plugin: str) -> None:
 def fetch_plugin(
     title: str, author: str, plugin: str, timeout: int = DEFAULT_TIMEOUT
 ) -> dict[str, Any] | None:
-    require_plugin(plugin)
-    xml = calibre.fetch_metadata(title, author, plugin, timeout)
+    def fetch_from_calibre() -> str:
+        require_plugin(plugin)
+        return calibre.fetch_metadata(title, author, plugin, timeout) or ''
+
+    xml = cache.raw('plugin', f'{plugin}\x00{title}\x00{author}', fetch_from_calibre)
     return opf.parse(xml) if xml else None
 
 

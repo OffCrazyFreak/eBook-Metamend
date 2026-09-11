@@ -14,6 +14,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from . import cache
 from .errors import SourceError
 
 #: The contact every catalogue asks for is the project URL, so nothing personal
@@ -55,10 +56,24 @@ def get_json(
     it: a catalogue that is down must not read as "no such book".
     """
     headers = {'User-Agent': USER_AGENT, 'Accept': accept}
+
+    def fetched() -> str:
+        body = _transport(url, headers, timeout).decode('utf8')
+        # Parsed before the raw layer may store it: a body that is not JSON is
+        # a failed attempt to retry, never a fixture to replay.
+        json.loads(body)
+        return body
+
     last_error: Exception | None = None
+    # A replay reads the same file however often it tries; one attempt is enough.
+    attempts = 1 if cache.replaying() else attempts
     for attempt in range(attempts):
         try:
-            return json.loads(_transport(url, headers, timeout))
+            return json.loads(cache.raw('http', url, fetched))
+        # A replay with no raw body must reach wrap() untouched, or the retry
+        # loop would report it as a transport failure.
+        except cache.MissingRaw:
+            raise
         # OSError covers URLError, socket timeouts and TLS errors; ValueError
         # covers a truncated or non-JSON body. A bare Exception here would also
         # swallow a programming mistake into retries with sleeps.
