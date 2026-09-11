@@ -8,10 +8,10 @@ import json
 
 import pytest
 
-from ebook_metamend import enrich
+from ebook_metamend import calibre, enrich
 from ebook_metamend.library import Book
 from ebook_metamend.matching import SourceScore
-from ebook_metamend.sources import cache
+from ebook_metamend.sources import cache, calibre_plugin, http
 
 
 def score(name, title, title_score, author_score):
@@ -344,6 +344,107 @@ class TestFixturesRecordWhatHappenedIncludingFailure:
         assert saved['source'] == 'kobo'
         assert saved['title'] == 'Dune'
         assert saved['response'] == {'title': 'Dune'}
+
+
+class TestTheRawBodyIsRecordedBesideTheParsedRecord:
+    """A parsed record replays what an old parser made of the answer; the raw
+    body lets the parser in the checked-out code run over what the catalogue
+    actually sent."""
+
+    @pytest.fixture
+    def fixtures(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cache, 'FIXTURES', tmp_path)
+        return tmp_path
+
+    def test_a_body_round_trips_through_the_transport(self, fixtures, monkeypatch):
+        monkeypatch.setattr(cache, 'MODE', 'record')
+        http.set_transport(lambda url, headers, timeout: b'{"docs": [1]}')
+        try:
+            assert http.get_json('https://example.test/search?q=dune') == {'docs': [1]}
+            monkeypatch.setattr(cache, 'MODE', 'replay')
+            http.set_transport(lambda *_: pytest.fail('replay hit the network'))
+            assert http.get_json('https://example.test/search?q=dune') == {'docs': [1]}
+        finally:
+            http.set_transport(None)
+
+    def test_a_parser_change_shows_in_replay(self, fixtures, monkeypatch):
+        monkeypatch.setattr(cache, 'MODE', 'record')
+        http.set_transport(lambda url, headers, timeout: b'{"title": "Dune", "year": 1965}')
+        try:
+
+            def old_parser(title, author):
+                return {'title': http.get_json('https://example.test/' + title)['title']}
+
+            def new_parser(title, author):
+                answer = http.get_json('https://example.test/' + title)
+                return {'title': answer['title'], 'year': answer['year']}
+
+            assert cache.wrap('openlib', old_parser)('Dune', 'Herbert') == {'title': 'Dune'}
+            monkeypatch.setattr(cache, 'MODE', 'replay')
+            http.set_transport(lambda *_: pytest.fail('replay hit the network'))
+            assert cache.wrap('openlib', new_parser)('Dune', 'Herbert') == {
+                'title': 'Dune',
+                'year': 1965,
+            }
+        finally:
+            http.set_transport(None)
+
+    def test_without_the_raw_body_the_parsed_record_still_serves(self, fixtures, monkeypatch):
+        monkeypatch.setattr(cache, 'MODE', 'record')
+        http.set_transport(lambda url, headers, timeout: b'{"title": "Dune"}')
+        try:
+            fetch = lambda t, a: http.get_json('https://example.test/' + t)  # noqa: E731
+            cache.wrap('openlib', fetch)('Dune', 'Herbert')
+            for raw_file in fixtures.glob('raw-*.json'):
+                raw_file.unlink()
+            monkeypatch.setattr(cache, 'MODE', 'replay')
+            replayed = cache.wrap('openlib', lambda t, a: pytest.fail('replay hit the network'))
+            assert replayed('Dune', 'Herbert') == {'title': 'Dune'}
+        finally:
+            http.set_transport(None)
+
+    def test_a_plugin_answer_replays_without_calibre(self, fixtures, monkeypatch):
+        monkeypatch.setattr(cache, 'MODE', 'record')
+        monkeypatch.setattr(calibre_plugin, 'require_plugin', lambda plugin: None)
+        opf_text = (
+            '<package xmlns="http://www.idpf.org/2007/opf" '
+            'xmlns:dc="http://purl.org/dc/elements/1.1/">'
+            '<metadata><dc:title>Dune</dc:title></metadata></package>'
+        )
+        monkeypatch.setattr(calibre, 'fetch_metadata', lambda *a, **k: opf_text)
+        first = calibre_plugin.fetch_plugin('Dune', 'Herbert', 'Kobo Metadata')
+        assert first['title'] == 'Dune'
+
+        monkeypatch.setattr(cache, 'MODE', 'replay')
+        monkeypatch.setattr(calibre, 'fetch_metadata', lambda *a, **k: pytest.fail('ran calibre'))
+        monkeypatch.setattr(
+            calibre_plugin, 'require_plugin', lambda plugin: pytest.fail('probed calibre')
+        )
+        assert calibre_plugin.fetch_plugin('Dune', 'Herbert', 'Kobo Metadata') == first
+
+    def test_a_bad_minute_does_not_overwrite_a_good_record(self, fixtures, monkeypatch):
+        monkeypatch.setattr(cache, 'MODE', 'record')
+        cache.wrap('openlib', lambda t, a: {'title': 'Dune'})('Dune', 'Herbert')
+        failing = cache.wrap(
+            'openlib', lambda t, a: (_ for _ in ()).throw(enrich.SourceError('TLS timeout'))
+        )
+        with pytest.raises(enrich.SourceError):
+            failing('Dune', 'Herbert')
+
+        monkeypatch.setattr(cache, 'MODE', 'replay')
+        replayed = cache.wrap('openlib', lambda t, a: pytest.fail('replay hit the network'))
+        assert replayed('Dune', 'Herbert') == {'title': 'Dune'}
+
+    def test_the_record_names_the_raw_files_it_read(self, fixtures, monkeypatch):
+        monkeypatch.setattr(cache, 'MODE', 'record')
+        http.set_transport(lambda url, headers, timeout: b'{}')
+        try:
+            fetch = lambda t, a: http.get_json('https://example.test/' + t)  # noqa: E731
+            cache.wrap('openlib', fetch)('Dune', 'Herbert')
+        finally:
+            http.set_transport(None)
+        saved = json.loads(cache.fixture_path('openlib', 'Dune', 'Herbert').read_text())
+        assert saved['raw'] == [cache.raw_path('http', 'https://example.test/Dune').name]
 
 
 class TestAtLowNoSourceIdentifiedTheBook:

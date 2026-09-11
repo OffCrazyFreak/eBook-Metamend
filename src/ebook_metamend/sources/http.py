@@ -14,6 +14,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from . import cache
 from .errors import SourceError
 
 #: The contact every catalogue asks for is the project URL, so nothing personal
@@ -58,7 +59,12 @@ def get_json(
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            return json.loads(_transport(url, headers, timeout))
+            body = cache.raw('http', url, lambda: _transport(url, headers, timeout).decode('utf8'))
+            return json.loads(body)
+        # A replay with no raw body must reach wrap() untouched, or the retry
+        # loop would report it as a transport failure.
+        except cache.MissingRaw:
+            raise
         # OSError covers URLError, socket timeouts and TLS errors; ValueError
         # covers a truncated or non-JSON body. A bare Exception here would also
         # swallow a programming mistake into retries with sleeps.

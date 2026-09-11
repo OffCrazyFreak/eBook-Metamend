@@ -189,6 +189,13 @@ METAMEND_CACHE_MODE=record METAMEND_FIXTURES=./fixtures ebook-metamend --match "
 METAMEND_CACHE_MODE=replay METAMEND_FIXTURES=./fixtures ebook-metamend --match "Some Book"
 ```
 
+A recording keeps two layers: the record each source parsed, and the raw body it
+parsed it from (the catalogue's JSON, the OPF a Calibre plugin printed). A replay
+runs the current parser over the raw body when it has one, so a change to a
+parser shows up in the replay instead of being hidden by it; a set recorded
+before the raw layer existed replays the parsed record as before. Recording
+again over an existing set only touches the network for bodies it lacks.
+
 `tools/snapshot.py` records a library's metadata and content hashes before and
 after a run and classifies every file as unchanged, meta-changed, content-changed
 or corrupt, so a change can be proven not to have damaged anything.
