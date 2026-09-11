@@ -205,7 +205,7 @@ ebook-convert cleaned.epub out.pdf --paper-size letter
 
 Working, and used on a real library of a few hundred books. Packaged as a `src/` layout with tests. The web version is live and runs the same package. Known rough edges, kept honest:
 
-- Name headings are still rewritten into a comma-free form (`tags.reformat_name_heading`), a habit from the Calibre days; the native writers store commas fine
+- Name headings are rewritten into a comma-free form (`tags.reformat_name_heading`) on purpose: the writers store commas fine, but a Calibre library splits every subject on commas when it imports the file
 - Open Library times out under rapid queries more often than it should
 - In the web version, a download of many files is zipped in memory; a large batch is better written back in place or downloaded in smaller selections
 

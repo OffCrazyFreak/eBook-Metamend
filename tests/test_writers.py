@@ -154,6 +154,14 @@ class TestPdfWriter:
         assert info['/Title'] == 'Better Title'
         assert info['/Keywords'] == 'a, b'
 
+    def test_a_comma_in_a_tag_survives_through_xmp(self, tmp_path):
+        """/Keywords is one comma-joined string by convention, so the list
+        form in XMP is what keeps a Library of Congress heading whole."""
+        path = tmp_path / 'book.pdf'
+        make_pdf(path)
+        pdf.write(str(path), {'tags': ['Angelou, Maya, 1928-2014', 'Poets']}, {})
+        assert pdf.read(str(path))['tags'] == ['Angelou, Maya, 1928-2014', 'Poets']
+
     def test_reads_the_info_dictionary_when_there_is_no_xmp(self, tmp_path):
         path = tmp_path / 'book.pdf'
         make_pdf(path)

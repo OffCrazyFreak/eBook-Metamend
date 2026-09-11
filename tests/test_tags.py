@@ -1,10 +1,10 @@
 """Tag cleaning.
 
-Calibre splits subjects on commas at every entry point, so a tag containing one
-cannot be stored. Rather than lose the information, a name heading naming the
-book's own author is rewritten into a form that says the same thing without a
-comma. Every other heading is left to split, because splitting is harmless and
-rewriting is not.
+The writers store a comma, but a Calibre library splits every subject on commas
+when it reads the file, so a tag containing one does not survive its next stop.
+Rather than lose the information, a name heading naming the book's own author is
+rewritten into a form that says the same thing without a comma. Every other
+heading is left to split, because splitting is harmless and rewriting is not.
 """
 
 import pytest
