@@ -1,7 +1,7 @@
 """Apple Books through the iTunes Search API. No key, and it allows browser calls.
 
 Measured on a 50-book sample it named the same book as the filename more often
-than any other catalogue (36 of 50, against Kobo's 32). It answers at edition
+than any other catalogue (37 of 50, against Kobo's 32). It answers at edition
 level with a description and genres, and gives no publisher or ISBN.
 """
 
@@ -25,8 +25,12 @@ _TAG = re.compile(r'<[^>]+>')
 
 
 def _plain(text: str) -> str:
-    """Apple wraps descriptions in HTML; the OPF wants text."""
-    return html.unescape(_TAG.sub('', text or '')).strip()
+    """Apple wraps descriptions in HTML; the OPF wants text.
+
+    Tags become spaces, not nothing, or a paragraph break glues two words
+    together; the split then also folds the non-breaking spaces Apple leaves.
+    """
+    return ' '.join(html.unescape(_TAG.sub(' ', text or '')).split())
 
 
 def _best(results: list[dict[str, Any]], title: str, author: str) -> dict[str, Any] | None:
@@ -54,7 +58,7 @@ def fetch_apple(title: str, author: str) -> dict[str, Any] | None:
     query = urllib.parse.urlencode(
         {'term': f'{title} {author}', 'media': 'ebook', 'entity': 'ebook', 'limit': LIMIT}
     )
-    payload = http.get_json(f'{SEARCH_URL}?{query}', timeout=TIMEOUT)
+    payload = http.get_json(f'{SEARCH_URL}?{query}', timeout=TIMEOUT) or {}
     hit = _best(payload.get('results') or [], title, author)
     if hit is None:
         return None

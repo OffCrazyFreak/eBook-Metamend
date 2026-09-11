@@ -9,11 +9,12 @@ import urllib.parse
 
 import pytest
 
-from ebook_metamend import sources
+from ebook_metamend import cli, enrich, sources
 from ebook_metamend.sources import http
 from ebook_metamend.sources.apple import fetch_apple
 from ebook_metamend.sources.errors import SourceError
 from ebook_metamend.sources.inventaire import fetch_inventaire
+from ebook_metamend.sources.openlibrary import fetch_openlibrary
 
 
 @pytest.fixture(autouse=True)
@@ -66,6 +67,25 @@ class TestTransport:
         assert http.get_json('https://example.invalid/x') == {'ok': True}
         assert len(calls) == 2
 
+    def test_a_non_json_body_is_retried_then_reported(self, monkeypatch):
+        monkeypatch.setattr(http.time, 'sleep', lambda _s: None)
+        http.set_transport(lambda *_: b'<html>rate limited</html>')
+        with pytest.raises(SourceError, match='JSONDecodeError'):
+            http.get_json('https://example.invalid/x')
+
+    def test_a_foreign_transport_error_is_a_source_error_not_a_crash(self):
+        """The browser transport raises its own types; the run must go on."""
+
+        class JsException(Exception):
+            pass
+
+        def broken(url, headers, timeout):
+            raise JsException('NetworkError')
+
+        http.set_transport(broken)
+        with pytest.raises(SourceError, match='JsException'):
+            http.get_json('https://example.invalid/x')
+
     def test_none_restores_urllib(self):
         http.set_transport(lambda *_: b'{}')
         http.set_transport(None)
@@ -109,6 +129,16 @@ class TestApple:
 
         assert record['description'] == 'A house, a hill & a harvest.'
         assert record['tags'] == ['Fiction & Literature', 'Literary']
+
+    def test_paragraph_breaks_keep_words_apart(self):
+        hit = dict(APPLE_HITS['results'][0], description='<p>One.</p><p>Two&#xa0;three</p>')
+        serve({'itunes.apple.com': {'results': [hit]}})
+        assert fetch_apple('The Quiet Orchard', 'Mara Voss')['description'] == 'One. Two three'
+
+    def test_the_author_breaks_a_title_tie(self):
+        twin = dict(APPLE_HITS['results'][0], artistName='Someone Else', description='other')
+        serve({'itunes.apple.com': {'results': [twin, APPLE_HITS['results'][0]]}})
+        assert fetch_apple('The Quiet Orchard', 'Mara Voss')['authors'] == ['Mara Voss']
 
     def test_it_never_claims_a_publisher_or_isbn(self):
         """Apple has neither, and a blank must not look like a find."""
@@ -202,6 +232,41 @@ class TestInventaire:
         assert fetch_inventaire('Completely Different Name', 'Nobody') is None
         assert len(asked) == 1
 
+    def test_a_merged_entity_is_found_under_its_old_uri(self):
+        """Wikidata merges answer under the canonical URI; the hit names the old one."""
+        works = {
+            'entities': {'wd:Q9': INVENTAIRE_WORKS['entities']['wd:Q1']},
+            'redirects': {'wd:Q1': 'wd:Q9'},
+        }
+        asked: list[str] = []
+
+        def transport(url, headers, timeout):
+            asked.append(url)
+            if 'api/search' in url:
+                return json.dumps({'results': INVENTAIRE_SEARCH['results'][:1]}).encode()
+            if 'wd%3AQ1' in url and 'wd%3AQ10' not in url:
+                return json.dumps(works).encode()
+            return json.dumps(INVENTAIRE_LABELS).encode()
+
+        http.set_transport(transport)
+        assert fetch_inventaire('The Quiet Orchard', 'Mara Voss')['authors'] == ['Mara Voss']
+
+    def test_an_ordinal_with_two_series_is_left_out(self):
+        work = dict(INVENTAIRE_WORKS['entities']['wd:Q1'])
+        work['claims'] = dict(work['claims'], **{'wdt:P179': ['wd:Q30', 'wd:Q31']})
+        labels = dict(INVENTAIRE_LABELS['entities'], **{'wd:Q31': {'labels': {'en': 'Other Run'}}})
+
+        def transport(url, headers, timeout):
+            if 'api/search' in url:
+                return json.dumps({'results': INVENTAIRE_SEARCH['results'][:1]}).encode()
+            if 'wd%3AQ1' in url and 'wd%3AQ10' not in url:
+                return json.dumps({'entities': {'wd:Q1': work}}).encode()
+            return json.dumps({'entities': labels}).encode()
+
+        http.set_transport(transport)
+        record = fetch_inventaire('The Quiet Orchard', 'Mara Voss')
+        assert record['series'] == 'Hill Country' and record['sidx'] is None
+
     def test_a_label_in_another_language_still_counts(self):
         serve_inventaire()
         record = fetch_inventaire('The Quiet Orchard Companion', 'Quelqu\'un')
@@ -220,3 +285,47 @@ class TestSelect:
     def test_the_web_set_is_keyless_only(self):
         assert set(sources.WEB_SOURCE_NAMES) == {'apple', 'openlib', 'inventaire'}
         assert 'kobo' not in sources.WEB_SOURCE_NAMES
+
+
+class TestOpenLibrary:
+    def test_the_search_answer_is_shaped_like_an_opf_record(self):
+        serve(
+            {
+                'openlibrary.org': {
+                    'docs': [
+                        {
+                            'title': 'The Quiet Orchard',
+                            'author_name': ['Mara Voss'],
+                            'subject': ['Orchards'],
+                        }
+                    ]
+                }
+            }
+        )
+        record = fetch_openlibrary('The Quiet Orchard', 'Mara Voss')
+        assert record['title'] == 'The Quiet Orchard'
+        assert record['authors'] == ['Mara Voss']
+        assert record['publisher'] == '' and record['isbn'] == ''
+
+
+class TestNarrowing:
+    def test_query_sources_asks_only_the_chosen(self):
+        asked = serve({'itunes.apple.com': APPLE_HITS})
+        enrich.reset_run_state()
+        answers = enrich.query_sources(
+            'The Quiet Orchard', 'Mara Voss', pause=False, sources=sources.select(['apple'])
+        )
+        assert list(answers) == ['apple']
+        assert all('itunes.apple.com' in url for url in asked)
+
+    def test_the_flag_tolerates_spaces_and_a_trailing_comma(self, monkeypatch, tmp_path):
+        seen = {}
+
+        def fake_run(selected, **kwargs):
+            seen['sources'] = kwargs['sources']
+            return []
+
+        monkeypatch.setattr(enrich, 'run', fake_run)
+        monkeypatch.setattr(enrich, 'select', lambda **_: [])
+        cli.enrich_command(['--sources', 'apple, openlib,', '--out', str(tmp_path / 'p.json')])
+        assert [s.name for s in seen['sources']] == ['openlib', 'apple']

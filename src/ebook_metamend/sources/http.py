@@ -21,6 +21,8 @@ from .errors import SourceError
 #: this header; that is why Open Library's anonymous rate applies there.
 USER_AGENT = 'eBook-Metamend/1.0 (+https://github.com/OffCrazyFreak/eBook-Metamend)'
 
+#: A transport returns the body or raises OSError; anything else is a bug in
+#: the transport, not a bad minute at the catalogue, and is reported as such.
 Transport = Callable[[str, dict[str, str], float], bytes]
 
 
@@ -65,6 +67,8 @@ def get_json(
             # No point pausing after the last attempt; it only delays the caller.
             if attempt < attempts - 1:
                 time.sleep(retry_pause * (attempt + 1))
+        except Exception as exc:  # noqa: BLE001 - a foreign transport error must not abort the run
+            raise SourceError(f'transport failed ({type(exc).__name__}: {str(exc)[:80]})') from exc
     raise SourceError(
         f'{attempts} attempts failed ({type(last_error).__name__}: {str(last_error)[:80]})'
     )

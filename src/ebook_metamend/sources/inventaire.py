@@ -33,10 +33,17 @@ SERIES_ORDINAL = 'wdt:P1545'
 
 
 def _entities(uris: list[str]) -> dict[str, Any]:
+    """Entities keyed by the URI asked for, following Wikidata merges."""
     if not uris:
         return {}
     query = urllib.parse.urlencode({'action': 'by-uris', 'uris': '|'.join(uris)})
-    return http.get_json(f'{ENTITIES_URL}?{query}', timeout=TIMEOUT).get('entities') or {}
+    payload = http.get_json(f'{ENTITIES_URL}?{query}', timeout=TIMEOUT) or {}
+    entities = payload.get('entities') or {}
+    # A merged entity answers under its canonical URI; the hit still names the old one.
+    for old, new in (payload.get('redirects') or {}).items():
+        if old not in entities and new in entities:
+            entities[old] = entities[new]
+    return entities
 
 
 def _label(entity: dict[str, Any] | None) -> str:
@@ -55,7 +62,7 @@ def fetch_inventaire(title: str, author: str) -> dict[str, Any] | None:
     query = urllib.parse.urlencode(
         {'types': 'works', 'search': f'{title} {author}', 'limit': LIMIT}
     )
-    hits = http.get_json(f'{SEARCH_URL}?{query}', timeout=TIMEOUT).get('results') or []
+    hits = (http.get_json(f'{SEARCH_URL}?{query}', timeout=TIMEOUT) or {}).get('results') or []
     scored = sorted(
         ((round(matching.sim(title, h.get('label') or ''), 2), h) for h in hits if h.get('uri')),
         key=lambda pair: pair[0],
@@ -87,6 +94,8 @@ def fetch_inventaire(title: str, author: str) -> dict[str, Any] | None:
 
     series = names(best_work, SERIES)
     ordinal = _claim(best_work, SERIES_ORDINAL)
+    # The ordinal is a bare list with no link to its series; only one of each is unambiguous.
+    placed = len(series) == 1 and len(ordinal) == 1
     return {
         'title': best_hit.get('label') or '',
         'authors': names(best_work, AUTHOR),
@@ -94,6 +103,6 @@ def fetch_inventaire(title: str, author: str) -> dict[str, Any] | None:
         'description': '',
         'tags': names(best_work, GENRE) + names(best_work, SUBJECT),
         'series': series[0] if series else None,
-        'sidx': ordinal[0] if series and ordinal else None,
+        'sidx': ordinal[0] if placed else None,
         'isbn': '',
     }

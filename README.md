@@ -130,7 +130,7 @@ Answer rates measured on the same 10-book sample, in one run. Behaviour is from 
 | Google Books | 8/10 | Answers confidently with adaptations, translations and sequels. Needs a second opinion |
 | Open Library | 0/10 | Thinner catalogue, and unreachable from the machine this was measured on: the TLS handshake to `openlibrary.org` times out most attempts while the rest of the same infrastructure responds instantly. It reports its failures rather than passing them off as "not found", and a source that fails several books in a row is shelved for the rest of the run |
 | Apple Books | see [docs/sources.md](docs/sources.md) | Names the right book most often of all on a 50-book sample. Keyless, browser-safe, about 20 calls a minute. Description and genres, never a publisher or ISBN |
-| Inventaire | see [docs/sources.md](docs/sources.md) | Built on Wikidata. Answers at work level, so it needs two more calls per book for authors and subjects. Always returns something, so the scoring does the rejecting |
+| Inventaire | see [docs/sources.md](docs/sources.md) | Built on Wikidata. Answers at work level, so it needs two more calls per book for authors and subjects. Its search always returns something, so hits below the weak title threshold are dropped before they cost a call |
 | Goodreads | - | Blocks after a single request. Not used |
 | Amazon | - | Returns SEO spam. Not used |
 

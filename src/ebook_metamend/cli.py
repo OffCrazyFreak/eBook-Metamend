@@ -74,7 +74,8 @@ def enrich_command(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        chosen = sources.select(args.sources.split(',')) if args.sources else None
+        names = [n.strip() for n in args.sources.split(',') if n.strip()]
+        chosen = sources.select(names) if names else None
     except ValueError as exc:
         parser.error(str(exc))
     config.warn_if_unsafe_cal_root()
