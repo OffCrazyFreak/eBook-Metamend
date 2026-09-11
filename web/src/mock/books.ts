@@ -68,8 +68,9 @@ function build(spec: Spec): BookResult {
   }
   const scores = spec.scores ?? []
   const trusted = scores.filter((s) => s.title_score >= 0.85 && s.author_score >= 0.7)
-  const sources = (trusted.length ? trusted : scores).map((s) => s.name)
-  const best = scores.reduce<SourceScore | null>(
+  const pool = trusted.length ? trusted : scores
+  const sources = pool.map((s) => s.name)
+  const best = pool.reduce<SourceScore | null>(
     (acc, s) => (acc === null || s.title_score > acc.title_score ? s : acc),
     null,
   )

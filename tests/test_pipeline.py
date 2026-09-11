@@ -52,6 +52,15 @@ class TestTheReportedFiguresDescribeTheTrustedSources:
         scores = [score('google', 'On Liberty (Squashed Edition)', 0.55, 1.0)]
         assert enrich.reported_scores(scores, []) == (0.55, 1.0)
 
+    def test_a_verdict_earned_outside_the_trusted_set_keeps_its_figures(self):
+        # The adaptation earns MED on its author and is barred from contributing;
+        # the weak survivor alone would print MED beside an author score of 0.
+        scores = [
+            score('google', 'On Liberty (Squashed Edition)', 0.7, 1.0),
+            score('openlib', 'Liberty', 0.6, 0.0),
+        ]
+        assert enrich.reported_scores(scores, ['openlib']) == (0.7, 1.0)
+
     def test_no_answers_at_all_read_as_zero(self):
         assert enrich.reported_scores([], []) == (0.0, 0.0)
 
