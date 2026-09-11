@@ -152,20 +152,43 @@ def junky(title: str | None) -> bool:
 
 
 def norm(s: str | None) -> str:
-    """Casefold, strip accents, spell out % and &, drop punctuation and articles.
+    """Casefold, fold Latin accents, spell out % and &, drop punctuation and articles.
 
     Letters of every script survive. The ASCII-only version turned a Cyrillic,
     Greek or CJK title into an empty string that scored 0.0 against itself, and
     it dropped accented letters, so "Straße" against "Strasse" scored 0.77 and
-    "Café" against "Cafe" was two different titles. Accents are folded rather
-    than kept because catalogues are inconsistent about them for the same book.
+    "Café" against "Cafe" was two different titles. Accents on Latin letters
+    are folded because catalogues are inconsistent about them for the same
+    book; marks on other scripts are kept, because there they are letters in
+    their own right: Cyrillic й is not и, and Japanese ゴ is not コ.
     """
     s = unicodedata.normalize('NFKD', (s or '').casefold())
-    s = ''.join(c for c in s if not unicodedata.combining(c))
     s = s.replace('%', ' percent ').replace('&', ' and ')
-    s = re.sub(r'[^\w ]|_', ' ', s)
-    s = re.sub(r'^(the|a|an)\b', ' ', s)
-    return re.sub(r'\s+', ' ', s).strip()
+    # Vowel signs of Devanagari and its relatives are marks (Mn, Mc) rather
+    # than letters, so a plain "is it a word character" test would cut every
+    # Hindi word into single consonants.
+    s = ''.join(c if c.isalnum() or _is_mark(c) or c == ' ' else ' ' for c in s).strip()
+    # Before the accent fold: "Thé" is a French title, not "The" with a stray mark.
+    s = re.sub(r'^(the|a|an)(?= |$)', ' ', s)
+    return re.sub(r'\s+', ' ', _fold_latin_marks(s)).strip()
+
+
+def _is_mark(c: str) -> bool:
+    return unicodedata.category(c) in ('Mn', 'Mc')
+
+
+def _fold_latin_marks(s: str) -> str:
+    """Drop a combining mark only when it sits on a Latin letter."""
+    out: list[str] = []
+    latin = False
+    for c in s:
+        if unicodedata.combining(c):
+            if latin:
+                continue
+        else:
+            latin = 'a' <= c <= 'z'
+        out.append(c)
+    return unicodedata.normalize('NFC', ''.join(out))
 
 
 def sim(a: str | None, b: str | None, *, prefix_bonus: bool = True) -> float:
