@@ -405,8 +405,8 @@ function Header({
             )}
           </AnimatePresence>
         </div>
-        <nav className="bp-mono flex gap-4 text-[11px] tracking-wider uppercase sm:gap-6 md:text-xs">
-          <a className="bp-link" href="#how-it-decides">
+        <nav className="bp-mono flex gap-4 text-[11px] tracking-wider whitespace-nowrap uppercase sm:gap-6 md:text-xs">
+          <a className="bp-link hidden sm:inline" href="#how-it-decides">
             How it decides
           </a>
           <a className="bp-link" href="https://github.com/OffCrazyFreak/eBook-Metamend">
@@ -850,7 +850,7 @@ function Summary({
   const [hover, setHover] = useState<number | null>(null)
   return (
     <section className="mt-10" aria-live="polite">
-      <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
+      <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
           <span className="bp-dim w-fit min-w-64">{stage(phase, counts, sample)}</span>
           <p className="bp-display mt-4 text-3xl md:text-4xl">
@@ -977,7 +977,7 @@ function Results({
   const picked = checked.filter((b) => isSelected(selection, b)).length
   return (
     <ol className="bp-panel mt-6 px-4 pt-3 [--row-inset:1rem] md:px-6 md:[--row-inset:1.5rem]">
-      <li className="bp-mono grid grid-cols-[1.25rem_2.5rem_1fr_auto] items-center gap-4 pb-3 text-xs tracking-wider text-[var(--bp-muted)] uppercase md:grid-cols-[1.25rem_2.5rem_1fr_10rem_7rem_8rem]">
+      <li className="bp-mono grid grid-cols-[1.25rem_2.5rem_1fr_auto] items-center gap-4 pb-3 text-xs tracking-wider text-[var(--bp-muted)] uppercase lg:grid-cols-[1.25rem_2.5rem_1fr_10rem_7rem_8rem]">
         <Tick
           label="Select every checked book"
           checked={checked.length > 0 && picked === checked.length}
@@ -987,12 +987,12 @@ function Results({
         />
         <span>no.</span>
         <span>file</span>
-        <span className="hidden md:block">sources</span>
-        <span className="hidden md:block">gains</span>
+        <span className="hidden lg:block">sources</span>
+        <span className="hidden lg:block">gains</span>
         <span className="flex items-center justify-end gap-3">
           <button
             type="button"
-            className="bp-link hidden normal-case md:inline"
+            className="bp-link hidden normal-case lg:inline"
             onClick={() => onLegend()}
             aria-label="Keyboard shortcuts"
           >
@@ -1032,14 +1032,14 @@ function Results({
                   disabled={!done}
                   onClick={() => onSelect(book)}
                   style={origin === book.stem ? { viewTransitionName: 'detail' } : undefined}
-                  className="bp-row-button grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-3 text-left focus-visible:outline-none disabled:cursor-default md:grid-cols-[2.5rem_1fr_10rem_7rem_8rem]"
+                  className="bp-row-button grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-3 text-left focus-visible:outline-none disabled:cursor-default lg:grid-cols-[2.5rem_1fr_10rem_7rem_8rem]"
                 >
                   <span className="bp-mono text-xs text-[var(--bp-muted)]">
                     {String(i + 1).padStart(2, '0')}
                   </span>
                   <span className="min-w-0">
-                    <span className="bp-row-title block truncate">{book.facts.title}</span>
-                    <span className="block truncate text-sm text-[var(--bp-muted)]">
+                    <span className="bp-row-title line-clamp-2">{book.facts.title}</span>
+                    <span className="line-clamp-2 text-sm text-[var(--bp-muted)]">
                       {book.facts.author}
                       {book.facts.series && ` · ${book.facts.series} ${book.facts.series_index}`}
                       <span className="bp-mono">
@@ -1048,12 +1048,12 @@ function Results({
                       </span>
                     </span>
                     {done && book.proposal && (
-                      <span className="bp-mono block truncate text-xs text-[var(--bp-muted)] md:hidden">
+                      <span className="bp-mono line-clamp-2 text-xs text-[var(--bp-muted)] lg:hidden">
                         <Gains book={book} outcome={outcome.get(book.stem)} prefix="gains: " />
                       </span>
                     )}
                   </span>
-                  <span className="bp-mono hidden text-xs text-[var(--bp-muted)] md:block">
+                  <span className="bp-mono hidden text-xs text-[var(--bp-muted)] lg:block">
                     {(done ? (book.proposal?.sources ?? []) : (book.answered ?? [])).map(
                       (s, n, all) => (
                         <motion.span
@@ -1071,7 +1071,7 @@ function Results({
                       ),
                     )}
                   </span>
-                  <span className="bp-mono hidden text-xs text-[var(--bp-muted)] md:block">
+                  <span className="bp-mono hidden text-xs text-[var(--bp-muted)] lg:block">
                     {done && book.proposal && (
                       <Gains book={book} outcome={outcome.get(book.stem)} />
                     )}
