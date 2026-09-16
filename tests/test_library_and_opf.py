@@ -273,14 +273,22 @@ class TestNamesFromTheWild:
             'The Quiet Orchard',
         )
 
-    def test_a_title_containing_by_keeps_the_whole_as_a_second_reading(self):
+    def test_a_title_containing_by_has_no_second_reading(self):
+        """ "Death by Black Hole" reads as a title and an author, wrongly, but the
+        whole as a title names nobody and could never be strong, so it is not
+        worth a round of queries."""
         facts = parse_filename('Death by Black Hole')
-        assert facts.alternate is not None
-        assert (facts.alternate.author, facts.alternate.title) == ('', 'Death by Black Hole')
+        assert (facts.author, facts.title) == ('Black Hole', 'Death')
+        assert facts.alternate is None
 
-    def test_last_comma_first_is_turned_round_but_a_suffix_is_not(self):
+    def test_last_comma_first_is_turned_round_but_a_suffix_or_a_pair_is_not(self):
         assert parse_filename('Voss, Mara - The Quiet Orchard').author == 'Mara Voss'
+        assert parse_filename('van Voss, Mara - The Quiet Orchard').author == 'Mara van Voss'
         assert parse_filename('Smith, Jr. - The Quiet Orchard').author == 'Smith, Jr.'
+        assert (
+            parse_filename('Mara Voss, Ann Person - The Quiet Orchard').author
+            == 'Mara Voss, Ann Person'
+        )
 
 
 class TestWalk:

@@ -266,52 +266,43 @@ class TestTheOtherReadingOfANameIsTriedWhenTheFirstFindsNothing:
         enrich.propose(self._book(tmp_path, stem), pause=False)
         assert len(catalogue) == 2
 
-    def test_a_lost_subtitle_colon_is_worked_around(self, monkeypatch, tmp_path):
-        """OceanofPDF drops the colon, so the whole subtitle rides along in the
-        query and Open Library finds nothing; the head of the title alone does.
-        Measured live on a real file."""
-        asked = []
+    def test_a_missing_recording_for_the_other_reading_is_skipped(self, monkeypatch, tmp_path):
+        """A fixture set recorded before names had two readings has no key for
+        the second one; the run reports it and carries on rather than aborting."""
+        from ebook_metamend.sources import cache
 
-        def fussy(title, author):
-            asked.append(title)
-            return (
-                {'title': 'Quiet Orchard', 'authors': ['Mara Voss']}
-                if title == 'Quiet Orchard'
-                else None
-            )
+        def strict(title, author):
+            if title == 'The Quiet Orchard':
+                return None
+            raise cache.MissingFixture(f'{title!r} / {author!r}')
 
-        def easy(title, author):
-            return {'title': 'Quiet Orchard: The Year Of Pruning', 'authors': ['Mara Voss']}
-
-        one = enrich.SOURCES[0].__class__(name='fussy', fetch=fussy, pause=0)
-        two = enrich.SOURCES[0].__class__(name='easy', fetch=easy, pause=0)
-        monkeypatch.setattr(enrich, 'SOURCES', (one, two))
+        one = enrich.SOURCES[0].__class__(name='one', fetch=strict, pause=0)
+        monkeypatch.setattr(enrich, 'SOURCES', (one,))
         monkeypatch.setattr(calibre, 'read_book_metadata', lambda path: {})
         enrich.reset_run_state()
-        stem = '_OceanofPDF.com_Quiet_Orchard_The_Year_Of_Pruning_-_Mara_Voss'
-        proposal = enrich.propose(self._book(tmp_path, stem), pause=False)
-        assert proposal is not None
-        assert proposal.conf == 'HIGH'
-        assert sorted(proposal.sources) == ['easy', 'fussy']
-        assert asked == ['Quiet Orchard The Year Of Pruning', 'Quiet Orchard']
+        assert (
+            enrich.propose(self._book(tmp_path, 'Ann Person - The Quiet Orchard'), pause=False)
+            is None
+        )
+        assert enrich.last_rounds == 2
         enrich.reset_run_state()
 
-    @pytest.mark.parametrize(
-        'query, head',
-        [
-            ('Sapiens A Brief History of Humankind', 'Sapiens'),
-            ('The Happiest Baby On The Block', ''),
-            ('The Happiest Baby On The Block And The Happiest Toddler On The Block', ''),
-            ('Gone with the Wind and Other Stories', ''),
-            ('The Power of Now A Guide to Spiritual Enlightenment', 'The Power of Now'),
-            ('Atomic Habits An Easy And Proven Way', 'Atomic Habits'),
-            ('The Design of Everyday Things', ''),
-            ('Thinking Fast and Slow', ''),
-            ('Zero to One', ''),
-        ],
-    )
-    def test_the_head_of_a_title_is_cut_only_before_a_subtitle(self, query, head):
-        assert enrich._head(query) == head
+    def test_a_book_read_both_ways_reports_two_rounds(self, catalogue, tmp_path):
+        """The page paces between books, not inside one, so it must know a book
+        cost two rounds to keep a source under its rate."""
+        enrich.propose(self._book(tmp_path, 'Some Other Book - Ann Person'), pause=False)
+        assert enrich.last_rounds == 2
+        enrich.propose(self._book(tmp_path, 'Mara Voss - The Quiet Orchard'), pause=False)
+        assert enrich.last_rounds == 1
+
+    def test_only_the_whole_title_is_ever_asked_for(self, catalogue, tmp_path):
+        """A retry with the head of a glued title once drew a different volume out
+        of the catalogues, a strict prefix that the prefix rule scores 0.95, and
+        proposed its ISBN. The catalogues are asked about the whole title only."""
+        enrich.propose(
+            self._book(tmp_path, 'Ann Person - The Quiet Orchard The Year Of Pruning'), pause=False
+        )
+        assert {title for title, _ in catalogue} == {'The Quiet Orchard The Year Of Pruning'}
 
     def test_a_series_name_has_one_reading(self, catalogue, tmp_path):
         """ "Author - Series - 02 - Title" is this tool's own convention; the

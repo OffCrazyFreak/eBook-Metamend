@@ -107,8 +107,9 @@ _LOWER_NAME_PARTS = frozenset(
 def _person_first(author: str) -> str:
     """ "Last, First" written the way the catalogues answer, "First Last".
 
-    Only the one-comma, short shape is turned round. "Smith, Jr." keeps its
-    comma, and so does anything long enough to be a list rather than a person.
+    Only the one-comma shape with a bare surname in front is turned round.
+    "Smith, Jr." keeps its comma, and so does "Mara Voss, Ann Person", which
+    is two people, not one written backwards.
     """
     author = re.sub(r'\s+(?:etc\.?|et al\.?)$', '', author.strip(), flags=re.I)
     if author.count(',') != 1:
@@ -116,7 +117,10 @@ def _person_first(author: str) -> str:
     last, first = (part.strip() for part in author.split(','))
     if not last or not first or first.rstrip('.').casefold() in _NAME_SUFFIXES:
         return author
-    if len(last.split()) > 2 or len(first.split()) > 3:
+    surname = last.split()
+    if len(surname) > 2 or (len(surname) == 2 and surname[0].casefold() not in _LOWER_NAME_PARTS):
+        return author
+    if len(first.split()) > 3:
         return author
     return f'{first} {last}'
 
@@ -221,7 +225,9 @@ def _read(stem: str) -> tuple[list[str], str, str | None]:
 
     scheme, order = '', None
     if _PDFDRIVE.search(s):
-        s, scheme, order = _PDFDRIVE.sub('', s), 'pdfdrive', 'title-first'
+        # The site names a file by its title alone; a dash inside is a subtitle.
+        s = _PDFDRIVE.sub('', s)
+        return [re.sub(r'_\s', ': ', s).replace('_', ' ').strip()], 'pdfdrive', 'title-first'
     if _LIBGEN.search(s):
         s, scheme, order = _LIBGEN.sub('', s), 'libgen', 'author-first'
 
@@ -325,10 +331,6 @@ def parse_filename(stem: str) -> FilenameFacts:
         # A title and nobody's name: nothing for a source's author to be scored
         # against, so it can never reach HIGH, but it is still worth reporting.
         return _facts(stem, '', parts[0], scheme)
-    if scheme == 'title-by-author':
-        # "Death by Black Hole" is a title with nobody's name in it.
-        whole = _facts(stem, '', ' by '.join(parts), '')
-        return replace(_title_first(stem, parts, scheme), alternate=whole)
     if order == 'title-first':
         return _title_first(stem, parts, scheme)
     if order == 'author-first':

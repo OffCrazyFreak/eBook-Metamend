@@ -170,5 +170,10 @@ def unavailable() -> list[str]:
 
 
 def pause_after() -> float:
-    """Seconds the worker should wait before the next book."""
-    return enrich.pause_after(WEB_SOURCES)
+    """Seconds the worker should wait before the next book.
+
+    The page cannot pause inside a book, so a book that took two rounds of
+    queries is paid for here: twice the wait, and Apple's twenty calls a
+    minute hold.
+    """
+    return enrich.pause_after(WEB_SOURCES) * enrich.last_rounds

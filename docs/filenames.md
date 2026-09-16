@@ -30,7 +30,7 @@ Title first:
 
 Title only:
 
-- PDFDrive, `Title ( PDFDrive ).pdf` and `Title ( PDFDrive.com ).pdf`, spaces inside the brackets, `_ ` for `: ` (filenames quoted on GitHub).
+- PDFDrive, `Title ( PDFDrive ).pdf` and `Title ( PDFDrive.com ).pdf`, spaces inside the brackets, `_ ` for `: `, a dash inside is a subtitle and never an author (filenames quoted on GitHub).
 - Kindle "Download & transfer via USB", the title alone; Kindle for PC, `ASIN_EBOK.azw` (DeDRM issues).
 - FanFicFare, default `${title}-${siteabbrev}_${storyId}` (`defaults.ini`).
 - dokumen.pub, vdoc.pub, epdf.pub slugs, `the-title-of-the-book-9780465050659-9780465003945-2013024417`, `-1nbsped-` for "1st ed.", `-4u9bqm2ndpq0` record ids, `epdf-pub-...-pdf` (their page URLs).
@@ -49,7 +49,7 @@ Other observations that shaped the rules: a spaced en dash, a spaced em dash, ` 
 ## What the parser does
 
 1. Strips the site's own marks (`_OceanofPDF.com_`, `(z-lib.org)`, `( PDFDrive )`, `- libgen.li`, `-- Anna’s Archive`, `(retail)`, `(v5.0)`, `(epub)`), a trailing `(Year)` or `(Year, Publisher)`, a bracketed ISBN, a duplicate-download counter and `.kepub`.
-2. Undoes the site's encoding: underscores or dots for spaces, `_ ` for `: `, `.-.` for ` - `, Anna's Archive's `_` for `.`, Z-Library's double space and OceanofPDF's double underscore for `: `, slugs back into words, Springer's CamelCase into words, `Last, First` into `First Last` (never `Smith, Jr.`).
+2. Undoes the site's encoding: underscores or dots for spaces, `_ ` for `: `, `.-.` for ` - `, Anna's Archive's `_` for `.`, Z-Library's double space and OceanofPDF's double underscore for `: `, slugs back into words, Springer's CamelCase into words, `Last, First` into `First Last` (never `Smith, Jr.`, never `Mara Voss, Ann Person`).
 3. Recognises the order when the scheme fixes it. A plain `A - B` is read author first, as the README asks, unless B reads more like a person than A (two or three capitalised words, an initial, no digits, no colon). When the name could be read either way and the other half could be a person at all, the other reading travels along as `FilenameFacts.alternate`.
 4. Series shapes from other tools are read too: `[Series #2]` as its own segment and `Title (Series Book 2)`.
 5. A name that carries no title (`pg1342`, an ISBN) is reported as such, in the CLI line and on the page, instead of "no source answered".
@@ -60,10 +60,12 @@ Other observations that shaped the rules: a spaced en dash, a spaced em dash, ` 
 
 Only when no source identifies the book as first read does `enrich.propose` ask the catalogues about the alternate reading, and it keeps that reading only if a source then identifies the book. A wrong reading cannot score: a source would have to name a book whose title is the author's name and whose author is the title, and two of them would have to agree. The bar for writing is unchanged; the cost is one extra round of queries for a book that was going to be LOW anyway.
 
-Separately, when a verdict is below HIGH and the title looks like a subtitle glued on without its colon (`Quiet Orchard The Year Of Pruning`), the head of the title (`Quiet Orchard`) is asked once more and each source keeps whichever of its two answers fits the whole filename better. Measured live: Open Library returns nothing for the glued form and finds the book with the head. The cut is made only before a word a subtitle opens with (the, a, an, how, why, what), only when a phrase follows, and never after a preposition or conjunction, because cutting `The Happiest Baby On | The Block And The Happiest Toddler On The Block` drew the single volume out of Open Library, a strict prefix of the omnibus that the prefix rule scores 0.95, and the two-book bundle reached HIGH on its strength. That prefix rule predates this page and still applies to any source that answers with a strict prefix of the filename title; the retry no longer goes looking for one.
+A retry with the head of a long title (asking for `Quiet Orchard` when the name says `Quiet Orchard The Year Of Pruning`) was built, measured and removed. It did rescue a name whose colon had been dropped, because Open Library answers nothing for the glued form. It also manufactured a HIGH for the wrong book: a series name glued to a title (`The Dark Tower The Waste Lands`) drew the volume called `The Dark Tower` out of two sources, and a source title that is a strict prefix of the filename title scores 0.95 under the prefix rule, so volume VII's ISBN and series index were proposed for volume III. Anything that makes the tool more willing to write is a change to the safety model, so the retry is gone; a glued subtitle now stays at whatever the full query earns, usually MED, which is honest. The prefix rule itself predates this page and still applies to any source that answers with a strict prefix of the filename title.
+
+The page paces between books, not inside one, so `web.pause_after` multiplies the wait by the rounds the last book took (`enrich.last_rounds`); Apple's twenty calls a minute hold even when every book is read both ways. In replay mode a fixture set recorded before names had two readings has no key for the second one; that round reports the missing recording and is skipped, while a missing key in the first round stays loud as before.
 
 ## Checked against
 
-- The two OceanofPDF pairs that started this, live with the three web sources: one HIGH (Apple and Open Library agreeing, after the head retry), one LOW. The LOW is correct: that file is a publisher's summary edition of a well-known book, its own metadata names the summary publisher as the first author, and the author score of 0.26 against the original is the safety model refusing to dress a summary up as the book it summarises.
+- The two OceanofPDF pairs that started this, live with the three web sources: one HIGH (Apple and Open Library agreeing), one LOW. The LOW is correct: that file is a publisher's summary edition of a well-known book, its own metadata names the summary publisher as the first author, and the author score of 0.26 against the original is the safety model refusing to dress a summary up as the book it summarises.
 - The same book renamed the Anna's Archive way, the Z-Library way and the Calibre way (`Title - Author`): HIGH each time, with the reading printed.
 - The pristine ten-book sample replayed against `fixtures-v2` (Kobo, Google, Open Library) and `fixtures-wide-raw` (the web sources): every verdict, source list, gain and figure identical to the code before this change, and no extra query asked.
