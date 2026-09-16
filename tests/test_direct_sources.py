@@ -144,6 +144,18 @@ class TestApple:
         serve({'itunes.apple.com': {'results': [twin, APPLE_HITS['results'][0]]}})
         assert fetch_apple('The Quiet Orchard', 'Mara Voss')['authors'] == ['Mara Voss']
 
+    def test_a_hit_that_stops_short_of_the_query_does_not_win_a_tie(self):
+        """Measured: "Dune" and "Dune Messiah (Dune Chronicles, Book 2)" both
+        scored 0.95 against "Dune Messiah", and the first book won on result
+        order; the pipeline then capped it and the book fell out of HIGH."""
+        first = dict(APPLE_HITS['results'][0], trackName='The Quiet')
+        sequel = dict(
+            APPLE_HITS['results'][0], trackName='The Quiet Orchard (Hill Country, Book 2)'
+        )
+        serve({'itunes.apple.com': {'results': [first, sequel]}})
+        record = fetch_apple('The Quiet Orchard', 'Mara Voss')
+        assert record['title'] == 'The Quiet Orchard (Hill Country, Book 2)'
+
     def test_it_never_claims_a_publisher_or_isbn(self):
         """Apple has neither, and a blank must not look like a find."""
         serve({'itunes.apple.com': APPLE_HITS})
@@ -230,6 +242,24 @@ class TestInventaire:
         fetch_inventaire('The Quiet Orchard', 'Mara Voss')
 
         assert 'wd%3AQ3' not in asked[1]
+
+    def test_a_label_that_stops_short_of_the_query_ranks_below_the_book(self):
+        """Same direction as the pipeline, or the first book of a series ties with
+        the one asked for and wins the round trip on result order."""
+        short = {'uri': 'wd:Q9', 'label': 'The Quiet', 'description': 'novel'}
+        # Both would score 0.95 as plain prefixes of each other's words.
+        full = dict(INVENTAIRE_SEARCH['results'][0], label='The Quiet Orchard: A Year of Pruning')
+        asked = serve_inventaire()
+        http.set_transport(
+            lambda url, headers, timeout: (
+                json.dumps({'results': [short, full]}).encode()
+                if 'api/search' in url
+                else (asked.append(url), json.dumps(INVENTAIRE_WORKS).encode())[1]
+            )
+        )
+        fetch_inventaire('The Quiet Orchard', 'Mara Voss')
+        uris = urllib.parse.parse_qs(urllib.parse.urlsplit(asked[0]).query)['uris'][0]
+        assert uris.split('|')[0] == full['uri']
 
     def test_nothing_close_means_no_answer_and_no_second_call(self):
         asked = serve({'api/search': INVENTAIRE_SEARCH})
