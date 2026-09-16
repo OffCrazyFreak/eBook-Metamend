@@ -26,7 +26,13 @@ def _write_json(path: str, payload) -> None:
 
 def _report(index: int, total: int, book: Book, proposal: Proposal | None) -> None:
     if proposal is None:
-        print(f'[{index}/{total}] {book.stem[:60]:<60} no source answered')
+        facts = book.facts()
+        why = 'no source answered'
+        if not facts.title:
+            why = 'filename names no title, expected "Author - Title"'
+            if facts.scheme:
+                why += f' ({facts.scheme} name)'
+        print(f'[{index}/{total}] {book.stem[:60]:<60} {why}')
         return
 
     sources = ','.join(proposal.sources)
@@ -36,6 +42,12 @@ def _report(index: int, total: int, book: Book, proposal: Proposal | None) -> No
         f'fn={proposal.fn_score:.2f} au={proposal.au_score:.2f} '
         f'src:{sources:<20} gains:{gains}'
     )
+    if proposal.facts and (proposal.facts.scheme or proposal.facts.author != book.facts().author):
+        # The name was not the plain "Author - Title": say how it was read.
+        how = f' ({proposal.facts.scheme} name)' if proposal.facts.scheme else ''
+        print(
+            f'        read as  {proposal.facts.author or "(no author)"} / {proposal.facts.title}{how}'
+        )
     if proposal.gains.get('title'):
         was = (proposal.current.get('title') or '')[:40]
         print(f"        title    {was} -> {proposal.gains['title'][:60]}")

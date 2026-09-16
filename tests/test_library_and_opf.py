@@ -49,6 +49,233 @@ class TestParseFilename:
         assert facts.query
 
 
+class TestNamesFromTheWild:
+    """How download sites and library managers actually name files, measured
+    (docs/filenames.md). Each shape is read the way its own tool wrote it, and
+    the invented book behind every example is Mara Voss's "The Quiet Orchard".
+    """
+
+    @pytest.mark.parametrize(
+        'stem, scheme, author, title',
+        [
+            # OceanofPDF: underscores for spaces, title first, "_-_" between them.
+            (
+                '_OceanofPDF.com_The_Quiet_Orchard_-_Mara_Voss',
+                'oceanofpdf',
+                'Mara Voss',
+                'The Quiet Orchard',
+            ),
+            (
+                'OceanofPDF.com_Slow-Grown_Fruit_-_Mara_Voss',
+                'oceanofpdf',
+                'Mara Voss',
+                'Slow-Grown Fruit',
+            ),
+            # Anna's Archive: " -- " between fields, every "." turned into "_".
+            (
+                'The Quiet Orchard -- Mara T_ Voss -- Hill Press, 2011 -- Hill Press -- 9781594488849 -- '
+                '0123456789abcdef0123456789abcdef -- Anna’s Archive',
+                'annas-archive',
+                'Mara T. Voss',
+                'The Quiet Orchard',
+            ),
+            # Z-Library over the years, the dropped colon leaving two spaces behind.
+            (
+                'The Quiet Orchard  a year of pruning (Voss, Mara) (z-lib.org)',
+                'z-library',
+                'Mara Voss',
+                'The Quiet Orchard: a year of pruning',
+            ),
+            (
+                'The Quiet Orchard (Mara Voss) (Z-Library)',
+                'z-library',
+                'Mara Voss',
+                'The Quiet Orchard',
+            ),
+            (
+                'The Quiet Orchard (Voss, Mara etc.) (z-library.sk, 1lib.sk, z-lib.sk)',
+                'z-library',
+                'Mara Voss',
+                'The Quiet Orchard',
+            ),
+            (
+                'The Quiet Orchard by Mara Voss (z-lib.org)',
+                'z-library',
+                'Mara Voss',
+                'The Quiet Orchard',
+            ),
+            (
+                'The Quiet Orchard (Mara Voss)\u2014_Hill Press_English_9781594488849 (Z-Library)',
+                'z-library',
+                'Mara Voss',
+                'The Quiet Orchard',
+            ),
+            # PDFDrive: title only, "_ " where a colon was.
+            ('The Quiet Orchard ( PDFDrive )', 'pdfdrive', '', 'The Quiet Orchard'),
+            (
+                'Orchards_ The Quiet Ones ( PDFDrive.com )',
+                'pdfdrive',
+                '',
+                'Orchards: The Quiet Ones',
+            ),
+            # Library Genesis, spaced and dotted.
+            (
+                'Mara Voss - The Quiet Orchard (2011, Hill Press) - libgen.li',
+                'libgen',
+                'Mara Voss',
+                'The Quiet Orchard',
+            ),
+            (
+                'Mara.Voss.-.The.Quiet.Orchard.2011.Hill.Press.-.libgen.lc.1',
+                'libgen',
+                'Mara Voss',
+                'The Quiet Orchard',
+            ),
+            ('Mara Voss - The Quiet Orch - libgen.li', 'libgen', 'Mara Voss', 'The Quiet Orch'),
+            # Scene release folders.
+            (
+                'Mara.Voss.-.The.Quiet.Orchard.2011.RETAIL.EPUB.eBook-GRP',
+                'dotted',
+                'Mara Voss',
+                'The Quiet Orchard',
+            ),
+            # Sharing channels and ebook-tools output.
+            (
+                'Mara Voss - The Quiet Orchard [RSC] (retail)',
+                '',
+                'Mara Voss',
+                'The Quiet Orchard [RSC]',
+            ),
+            (
+                'Mara Voss - The Quiet Orchard (2011) [9781594488849]',
+                '',
+                'Mara Voss',
+                'The Quiet Orchard',
+            ),
+            # Slugs: Standard Ebooks, dokumen.pub, vdoc.pub, epdf.pub.
+            ('mara-voss_the-quiet-orchard', 'slug', 'Mara Voss', 'The Quiet Orchard'),
+            ('mara-voss_the-quiet-orchard_advanced', 'slug', 'Mara Voss', 'The Quiet Orchard'),
+            (
+                'the-quiet-orchard-9781594488849-9781594488856-2011024417',
+                'slug',
+                '',
+                'The Quiet Orchard',
+            ),
+            ('the-quiet-orchard-1nbsped-9781594488849', 'slug', '', 'The Quiet Orchard'),
+            ('the-quiet-orchard-4u9bqm2ndpq0', 'slug', '', 'The Quiet Orchard'),
+            ('epdf-pub-the-quiet-orchard-pdf', 'slug', '', 'The Quiet Orchard'),
+            # Springer: CamelCase after the year, cut short by the site.
+            (
+                '2011_Book_TheQuietOrchardAYearOfPrun',
+                'springer',
+                '',
+                'The Quiet Orchard A Year Of Prun',
+            ),
+            # Underscores for spaces and nothing else (Humble Bundle, publishers).
+            ('The_Quiet_Orchard_2nd_Edition', '', '', 'The Quiet Orchard 2nd Edition'),
+            # "Title by Author" (Z-Library once, renaming tools still).
+            ('The Quiet Orchard by Mara Voss', 'title-by-author', 'Mara Voss', 'The Quiet Orchard'),
+            # Other separators between the same two halves.
+            ('Mara Voss \u2013 The Quiet Orchard', '', 'Mara Voss', 'The Quiet Orchard'),
+            ('Mara Voss \u2014 The Quiet Orchard', '', 'Mara Voss', 'The Quiet Orchard'),
+            ('Mara Voss _ The Quiet Orchard', '', 'Mara Voss', 'The Quiet Orchard'),
+            # Kobo's double extension, a browser's duplicate counter, Scribd's title bar.
+            ('Mara Voss - The Quiet Orchard.kepub', '', 'Mara Voss', 'The Quiet Orchard'),
+            ('Mara Voss - The Quiet Orchard (1)', '', 'Mara Voss', 'The Quiet Orchard'),
+            ('The Quiet Orchard | PDF | Gardening', '', '', 'The Quiet Orchard'),
+            # A title and nobody's name.
+            ('The Quiet Orchard', '', '', 'The Quiet Orchard'),
+        ],
+    )
+    def test_is_read_the_way_its_tool_wrote_it(self, stem, scheme, author, title):
+        facts = parse_filename(stem)
+        assert (facts.scheme, facts.author, facts.title) == (scheme, author, title)
+
+    @pytest.mark.parametrize(
+        'stem, scheme',
+        [
+            ('pg1342-images-3', 'gutenberg'),
+            ('quietorchardyea0000voss_lcp', 'internet-archive'),
+            ('978-1-59448-884-9', 'isbn'),
+            ('9781594488849', 'isbn'),
+            ('B00KYB2XAA_EBOK', 'kindle'),
+        ],
+    )
+    def test_a_name_that_carries_no_title_says_so(self, stem, scheme):
+        facts = parse_filename(stem)
+        assert facts.title == ''
+        assert facts.query == ''
+        assert facts.scheme == scheme
+        assert facts.alternate is None
+
+    def test_a_plain_name_is_read_author_first_with_the_other_way_kept(self):
+        facts = parse_filename('Mara Voss - Quiet Orchard')
+        assert (facts.author, facts.title) == ('Mara Voss', 'Quiet Orchard')
+        assert facts.alternate is not None
+        assert (facts.alternate.author, facts.alternate.title) == ('Quiet Orchard', 'Mara Voss')
+        assert facts.alternate.alternate is None
+
+    @pytest.mark.parametrize(
+        'stem',
+        [
+            'Mara Voss - The Quiet Orchard: A Year of Pruning',
+            'Mara Voss - Some Product Guide for Version 4 Cloud and Beyond',
+            'The Quiet Orchard: A Year of Pruning - Mara Voss',
+        ],
+    )
+    def test_a_half_that_cannot_be_a_person_leaves_no_other_reading(self, stem):
+        facts = parse_filename(stem)
+        assert facts.author == 'Mara Voss'
+        assert facts.alternate is None
+
+    @pytest.mark.parametrize(
+        'stem',
+        [
+            # A subtitle, an article or a long run of words reads as a title.
+            'The Quiet Orchard: A Year of Pruning - Mara T. Voss',
+            'The Quiet Orchard - Mara T. Voss',
+            'Quiet Orchards of the North - Mara Voss',
+            'Orchard - Mara Voss',
+        ],
+    )
+    def test_a_name_whose_last_half_reads_as_a_person_is_read_title_first(self, stem):
+        facts = parse_filename(stem)
+        assert facts.author == facts.stem.split(' - ')[-1]
+        assert facts.scheme == 'title-first'
+
+    def test_two_names_joined_by_and_are_one_author(self):
+        facts = parse_filename('Colin Bryar and Bill Carr - Working Backwards')
+        assert facts.author == 'Colin Bryar and Bill Carr'
+
+    def test_a_series_name_has_no_other_reading(self):
+        assert parse_filename('Mara Voss - Hill Country - 02 - The Quiet Orchard').alternate is None
+
+    def test_series_shapes_from_other_tools(self):
+        facts = parse_filename(
+            'Mara Voss - [Hill Country #2] - The Quiet Orchard (2011) [9781594488849]'
+        )
+        assert (facts.series, facts.series_index, facts.title) == (
+            'Hill Country',
+            '2',
+            'The Quiet Orchard',
+        )
+        facts = parse_filename('Mara Voss - The Quiet Orchard (Hill Country Book 2)')
+        assert (facts.series, facts.series_index, facts.title) == (
+            'Hill Country',
+            '2',
+            'The Quiet Orchard',
+        )
+
+    def test_a_title_containing_by_keeps_the_whole_as_a_second_reading(self):
+        facts = parse_filename('Death by Black Hole')
+        assert facts.alternate is not None
+        assert (facts.alternate.author, facts.alternate.title) == ('', 'Death by Black Hole')
+
+    def test_last_comma_first_is_turned_round_but_a_suffix_is_not(self):
+        assert parse_filename('Voss, Mara - The Quiet Orchard').author == 'Mara Voss'
+        assert parse_filename('Smith, Jr. - The Quiet Orchard').author == 'Smith, Jr.'
+
+
 class TestWalk:
     @pytest.fixture
     def library(self, tmp_path):

@@ -78,8 +78,11 @@ export function applyEvent(list: BookResult[], event: RunEvent): BookResult[] {
     case 'querying':
       return list.map((b) => (b.stem === event.stem ? { ...b, status: 'querying' } : b))
     case 'answer':
+      // A catalogue asked again in a retry round is the same witness, not a new one.
       return list.map((b) =>
-        b.stem === event.stem ? { ...b, answered: [...(b.answered ?? []), event.source] } : b,
+        b.stem !== event.stem || b.answered?.includes(event.source)
+          ? b
+          : { ...b, answered: [...(b.answered ?? []), event.source] },
       )
     case 'book':
       return list.map((b) => (b.stem === event.result.stem ? event.result : b))

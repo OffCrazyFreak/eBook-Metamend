@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 from . import enrich
-from .library import Book, parse_filename
+from .library import Book, FilenameFacts, parse_filename
 from .sources import WEB_SOURCE_NAMES, http, select
 
 WEB_SOURCES = select(WEB_SOURCE_NAMES)
@@ -79,15 +79,19 @@ def _remove(book: Book, root: str) -> None:
         folder = os.path.dirname(folder)
 
 
-def facts(stem: str) -> dict[str, Any]:
-    """The filename's claims, in the shape the page shows."""
-    f = parse_filename(os.path.basename(stem))
+def _facts(f: FilenameFacts) -> dict[str, Any]:
     return {
         'author': f.author,
         'title': f.title,
         'series': f.series,
         'series_index': f.series_index,
+        'scheme': f.scheme,
     }
+
+
+def facts(stem: str) -> dict[str, Any]:
+    """The filename's claims, in the shape the page shows."""
+    return _facts(parse_filename(os.path.basename(stem)))
 
 
 def propose(
@@ -116,6 +120,9 @@ def propose(
         'files': {ext: os.path.basename(path) for ext, path in proposal.files.items()},
         'current': proposal.current,
         'unreadable': proposal.unreadable,
+        # The reading the verdict was scored against, which may be the name the
+        # other way round from what the page showed while it waited.
+        'facts': _facts(proposal.facts) if proposal.facts else facts(stem),
         'scores': [
             {
                 'name': s.name,

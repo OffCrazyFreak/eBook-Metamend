@@ -15,6 +15,9 @@ export type ToWorker =
   | { type: 'init'; base: string }
   // A new run: shelved catalogues and back-off from the last one are forgotten.
   | { type: 'reset' }
+  // What each filename claims, read by the same parser the verdicts use, so the
+  // rows never show a second parser's reading while they wait.
+  | { type: 'facts'; id: number; stems: string[] }
   | { type: 'propose'; id: number; stem: string; files: FileBytes }
   | { type: 'apply'; id: number; stem: string; files: FileBytes; proposal: Proposal }
 
@@ -24,6 +27,7 @@ export type FromWorker =
   | { type: 'failed'; message: string }
   // id names the propose request, so an answer for a stopped one can be told apart.
   | { type: 'answer'; id: number; stem: string; source: SourceName }
+  | { type: 'facts'; id: number; facts: FilenameFacts[] }
   | {
       type: 'proposed'
       id: number

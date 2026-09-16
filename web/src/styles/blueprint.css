@@ -208,7 +208,8 @@ html {
   color: var(--bp-steel);
   border-style: dashed;
 }
-.bp-stamp[data-verdict='NONE'] {
+.bp-stamp[data-verdict='NONE'],
+.bp-stamp[data-verdict='UNTITLED'] {
   border-style: dotted;
 }
 .bp-stamp[data-verdict='UNREADABLE'] {
@@ -231,6 +232,7 @@ html {
   background: rgba(103, 128, 176, 0.45);
 }
 .bp-segment[data-verdict='NONE'],
+.bp-segment[data-verdict='UNTITLED'],
 .bp-segment[data-verdict='UNREADABLE'] {
   background: rgba(167, 182, 217, 0.25);
 }

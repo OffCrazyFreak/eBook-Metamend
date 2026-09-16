@@ -6,6 +6,7 @@ the CLI owns presentation.
 
 from __future__ import annotations
 
+import functools
 import re
 import sys
 import time
@@ -14,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import calibre, matching, tags
-from .library import Book, books
+from .library import Book, FilenameFacts, books
 from .sources import SOURCES, Pacer, Source, cache
 from .sources.errors import SourceError, SourceUnavailable
 from .writers import epub, pdf
@@ -56,6 +57,8 @@ class Proposal:
     writes: list[tuple[str, bool, str]] = field(default_factory=list, repr=False)
     #: Every source's score, including the ones that earned no say. Reporting only.
     scores: list[matching.SourceScore] = field(default_factory=list, repr=False)
+    #: The reading of the filename the verdict was scored against. Reporting only.
+    facts: FilenameFacts | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         """The serialised form. Explicit rather than ``asdict`` so that adding a
@@ -387,6 +390,53 @@ def compute_gains(merged: dict[str, Any], current: dict[str, Any], conf: str) ->
     return gains
 
 
+#: Words a subtitle tends to open with when its colon has been lost.
+_SUBTITLE_STARTERS = frozenset({'the', 'a', 'an', 'how', 'why', 'what'})
+#: Words a title never ends on. A starter after one of these is mid-phrase
+#: ("Baby On | The Block", "Gone with | the Wind"), not a subtitle's first word.
+_PHRASE_WORDS = frozenset(
+    'and or of on in to for with from at by the a an into onto over under about as'.split()
+)
+
+
+def _head(query: str) -> str:
+    """The title before a subtitle whose colon a download site dropped, or ''.
+
+    Cut only before a word a subtitle opens with, only when a phrase follows
+    it, and never mid-phrase, so "Thinking Fast and Slow", "Gone with the Wind"
+    and an omnibus "A On The Block And B On The Block" are left alone while
+    "Sapiens A Brief History of Humankind" becomes "Sapiens". Never the first
+    word: "The Design of Everyday Things" has no subtitle.
+    """
+    words = query.split()
+    for position, word in enumerate(words[1:], 1):
+        if word.casefold() not in _SUBTITLE_STARTERS:
+            continue
+        # A subtitle is a phrase of its own, and the title before it does not
+        # end mid-phrase. Measured: cutting "The Happiest Baby On The Block And
+        # The Happiest Toddler On The Block" at "On | The" drew the single volume
+        # out of Open Library, a strict prefix of the omnibus that the prefix
+        # rule scores 0.95, and the two-book bundle reached HIGH on its strength.
+        if len(words) - position >= 3 and words[position - 1].casefold() not in _PHRASE_WORDS:
+            return ' '.join(words[:position])
+    return ''
+
+
+def _better_answers(
+    first: dict[str, dict[str, Any]], second: dict[str, dict[str, Any]], facts
+) -> dict[str, dict[str, Any]]:
+    """Per source, whichever of its two answers fits the filename better."""
+    merged = dict(first)
+    for name, answer in second.items():
+        if name not in merged:
+            merged[name] = answer
+            continue
+        old, new = score({name: merged[name]}, facts)[0][0], score({name: answer}, facts)[0][0]
+        if (new.title_score, new.author_score) > (old.title_score, old.author_score):
+            merged[name] = answer
+    return merged
+
+
 def propose(
     book: Book,
     *,
@@ -401,18 +451,37 @@ def propose(
     sleep inside Python and waits between books in JavaScript instead.
     """
     facts = book.facts()
-    # A stem with no " - " parses as all author and no title, so every title
-    # score would be 0.0 against an empty string and any answer at all would
-    # look equally (un)related. There is nothing to score against, so do not ask.
+    # A stem that names no title (a Gutenberg number, a bare ISBN) leaves nothing
+    # to score against: every title score would be 0.0 against an empty string
+    # and any answer at all would look equally (un)related. So do not ask.
     if not facts.query:
         return None
-    answers = query_sources(
-        facts.query, facts.author, sources=sources, pause=pause, on_answer=on_answer
-    )
+    ask = functools.partial(query_sources, sources=sources, pause=pause, on_answer=on_answer)
+    answers = ask(facts.query, facts.author)
+    scores, conf = score(answers, facts) if answers else ([], 'LOW')
+    if facts.alternate is not None and not any(s.strong for s in scores):
+        # Nothing identified the book as first read, and the name could be read
+        # the other way round: half the tools out there write the title first.
+        # The catalogues settle it. A wrong reading cannot score: a source would
+        # have to name a book whose title is the author's name and whose author
+        # is the title, twice over, so the bar for writing is unchanged.
+        other = facts.alternate
+        if other.query:
+            other_answers = ask(other.query, other.author)
+            other_scores, other_conf = score(other_answers, other) if other_answers else ([], 'LOW')
+            if any(s.strong for s in other_scores):
+                facts, answers, scores, conf = other, other_answers, other_scores, other_conf
+    if conf != 'HIGH' and (head := _head(facts.query)):
+        # A subtitle glued on without its colon ("Quiet Orchard The Year Of
+        # Pruning", as OceanofPDF writes it) is a query Open Library answers with
+        # nothing at all, measured live, while the head alone finds the book. The
+        # answers are still scored against the whole filename reading; a source
+        # only trades its answer for one that fits the filename better.
+        answers = _better_answers(answers, ask(head, facts.author), facts)
+        scores, conf = score(answers, facts) if answers else ([], 'LOW')
     if not answers:
         return None
 
-    scores, conf = score(answers, facts)
     trusted = trusted_names(scores)
     title_score, author_score = reported_scores(scores, trusted)
     surviving = {name: answers[name] for name in trusted}
@@ -437,6 +506,7 @@ def propose(
         current=current or {},
         unreadable=unreadable,
         scores=scores,
+        facts=facts,
     )
 
 

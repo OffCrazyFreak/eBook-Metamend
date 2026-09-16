@@ -108,10 +108,29 @@ class TestPropose:
         assert web.facts('Fiction/Mara Voss - The Quiet Orchard')['author'] == 'Mara Voss'
 
     def test_a_stem_without_a_title_asks_nobody(self, tmp_path, _fake_catalogues):
-        assert (
-            web.propose('Just A Name', {'.epub': epub_bytes(tmp_path)}, str(tmp_path / 'l')) is None
-        )
+        """A Project Gutenberg number names no title, so there is nothing to score
+        a catalogue's answer against."""
+        assert web.propose('pg1342', {'.epub': epub_bytes(tmp_path)}, str(tmp_path / 'l')) is None
         assert _fake_catalogues == []
+        assert web.facts('pg1342') == {
+            'author': '',
+            'title': '',
+            'series': None,
+            'series_index': None,
+            'scheme': 'gutenberg',
+        }
+
+    def test_a_title_with_no_author_is_asked_but_cannot_be_written(
+        self, tmp_path, _fake_catalogues
+    ):
+        """Nothing in the name vouches for an author, so no source can be strong
+        and the verdict stays LOW; the visitor still sees what was found."""
+        result = web.propose(
+            'The Quiet Orchard', {'.epub': epub_bytes(tmp_path)}, str(tmp_path / 'l')
+        )
+        assert result is not None
+        assert result['conf'] == 'LOW'
+        assert result['facts']['author'] == ''
 
     def test_facts_follow_the_filename_parser(self):
         assert web.facts('Mara Voss - Hill Country - 02 - The Quiet Orchard') == {
@@ -119,6 +138,25 @@ class TestPropose:
             'title': 'The Quiet Orchard',
             'series': 'Hill Country',
             'series_index': '02',
+            'scheme': '',
+        }
+
+    def test_the_facts_returned_are_the_reading_that_earned_the_verdict(
+        self, tmp_path, _fake_catalogues
+    ):
+        """Calibre writes the title first. The page showed the name read author
+        first while it waited; the verdict comes back with the reading that fit."""
+        result = web.propose(
+            'The Quiet Orchard - Mara Voss', {'.epub': epub_bytes(tmp_path)}, str(tmp_path / 'l')
+        )
+        assert result is not None
+        assert result['conf'] == 'HIGH'
+        assert result['facts'] == {
+            'author': 'Mara Voss',
+            'title': 'The Quiet Orchard',
+            'series': None,
+            'series_index': None,
+            'scheme': 'title-first',
         }
 
 

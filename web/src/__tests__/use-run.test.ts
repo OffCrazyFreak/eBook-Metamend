@@ -13,7 +13,13 @@ type Proposed = Extract<FromWorker, { type: 'proposed' }>
 // Hoisted with the mock below: vi.mock runs before any import, so the fake
 // must exist before use-run.ts asks for its Client.
 const { FakeClient, script, FACTS } = vi.hoisted(() => {
-  const FACTS = { author: 'Ada Example', title: 'Sample', series: null, series_index: null }
+  const FACTS = {
+    author: 'Ada Example',
+    title: 'Sample',
+    series: null,
+    series_index: null,
+    scheme: '',
+  }
   // What the fake worker answers, set per test. A propose that is never
   // answered leaves the run mid-book, which is how stop is exercised.
   const script = {
@@ -43,6 +49,9 @@ const { FakeClient, script, FACTS } = vi.hoisted(() => {
     }
     reset() {
       this.resets++
+    }
+    facts(stems: string[]) {
+      return Promise.resolve(stems.map(() => FACTS))
     }
     async propose(stem: string, files: FileBytes) {
       const id = this.nextId++

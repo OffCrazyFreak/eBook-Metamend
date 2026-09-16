@@ -2,7 +2,6 @@ import { downloadZip } from 'client-zip'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { groupBooks, type Intake, type IntakeBook } from '@/intake'
-import { parseStem } from '@/mock/books'
 import { applyEvent, simulateRun, type Simulation } from '@/mock/simulate'
 import type { BookResult, Extension, RunEvent, SourceName } from '@/types'
 import type { FileBytes } from '@/worker/protocol'
@@ -109,10 +108,17 @@ export function useRun(options: { failLoad?: boolean } = {}) {
       const books = groupBooks(chosen.books)
       intake.current = new Map(books.map((b) => [b.stem, b]))
       folders.current = chosen.folders
+      // The file's own name stands in until the worker has read it.
       const rows: BookResult[] = books.map((b) => ({
         stem: b.stem,
         files: Object.keys(b.files).sort() as Extension[],
-        facts: parseStem(b.stem.slice(b.stem.lastIndexOf('/') + 1)),
+        facts: {
+          author: '',
+          title: b.stem.slice(b.stem.lastIndexOf('/') + 1),
+          series: null,
+          series_index: null,
+          scheme: '',
+        },
         status: 'pending',
         proposal: null,
       }))
@@ -126,6 +132,15 @@ export function useRun(options: { failLoad?: boolean } = {}) {
       }
       if (token.current !== mine) return
       py.reset()
+      try {
+        const facts = await py.facts(rows.map((r) => r.stem))
+        rows.forEach((row, i) => {
+          if (facts[i]) row.facts = facts[i]
+        })
+      } catch {
+        // A row keeps its file name; the verdict brings the reading with it.
+      }
+      if (token.current !== mine) return
       handle({ type: 'ready', books: rows })
       for (const row of rows) {
         if (token.current !== mine) return
