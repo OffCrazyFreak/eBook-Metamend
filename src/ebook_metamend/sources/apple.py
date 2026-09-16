@@ -34,7 +34,12 @@ def _html(text: str) -> str:
 
 
 def _best(results: list[dict[str, Any]], title: str, author: str) -> dict[str, Any] | None:
-    """The result that reads most like the filename: title first, author breaks ties."""
+    """The result that reads most like the filename: title first, author breaks ties.
+
+    Scored with the direction the pipeline uses, or a hit that stops short of the
+    query ("Dune" for "Dune Messiah") ties with the book itself at the prefix
+    score and wins on result order, only to be capped downstream.
+    """
     ranked = []
     for hit in results:
         if hit.get('kind') != 'ebook':
@@ -43,7 +48,7 @@ def _best(results: list[dict[str, Any]], title: str, author: str) -> dict[str, A
         artist = hit.get('artistName') or ''
         ranked.append(
             (
-                round(matching.sim(title, name), 2),
+                round(matching.title_sim(name, title, title), 2),
                 matching.best_author_score([artist], author),
                 hit,
             )

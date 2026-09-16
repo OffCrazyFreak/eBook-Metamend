@@ -78,7 +78,12 @@ def fetch_inventaire(title: str, author: str) -> dict[str, Any] | None:
     )
     hits = (http.get_json(f'{SEARCH_URL}?{query}', timeout=TIMEOUT) or {}).get('results') or []
     scored = sorted(
-        ((round(matching.sim(title, h.get('label') or ''), 2), h) for h in hits if h.get('uri')),
+        # Same direction as the pipeline: a label that stops short of the query is not the book.
+        (
+            (round(matching.title_sim(h.get('label') or '', title, title), 2), h)
+            for h in hits
+            if h.get('uri')
+        ),
         key=lambda pair: pair[0],
         reverse=True,
     )
