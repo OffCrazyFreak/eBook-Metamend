@@ -25,7 +25,7 @@ Title first:
 - LazyLibrarian, default `$Title - $Author` (`configdefs.py`).
 - Anna's Archive, `Title -- Author -- Edition, Year -- Publisher -- ISBN -- md5 -- Anna’s Archive.ext`, every field at most 60 characters, the whole at most 150, and every `.` in the name turned into `_` so `Mara T. Voss` arrives as `Mara T_ Voss` (`allthethings/page/views.py`). Empty fields are dropped, so the second field is not always the author.
 - Z-Library over the years, `Title (Author) (z-lib.org)`, `Title by Author (z-lib.org)`, `Title (Author)` followed by an em dash and `_Publisher_Language_ISBN (Z-Library)`, `Title (Last, First etc.) (z-library.sk, 1lib.sk, z-lib.sk)`. A colon in the title is dropped and leaves two spaces behind, which is how the subtitle boundary is recovered (filenames quoted in GitHub issues).
-- OceanofPDF, `_OceanofPDF.com_Title_-_Author.ext`, underscores for spaces, the colon dropped without trace, hyphens inside words kept (`Domain-Driven`) (three independent renaming scripts on GitHub and the files that started this).
+- OceanofPDF, `_OceanofPDF.com_Title_-_Author.ext`, underscores for spaces, a colon left as a double underscore (`Title__Subtitle`), the title cut at about 40 characters, dots dropped from initials, hyphens inside words kept (`Domain-Driven`) (three independent renaming scripts on GitHub and the files that started this).
 - Renaming tools, `Title by Author.ext` (ebook-rename's README).
 
 Title only:
@@ -49,7 +49,7 @@ Other observations that shaped the rules: a spaced en dash, a spaced em dash, ` 
 ## What the parser does
 
 1. Strips the site's own marks (`_OceanofPDF.com_`, `(z-lib.org)`, `( PDFDrive )`, `- libgen.li`, `-- Anna’s Archive`, `(retail)`, `(v5.0)`, `(epub)`), a trailing `(Year)` or `(Year, Publisher)`, a bracketed ISBN, a duplicate-download counter and `.kepub`.
-2. Undoes the site's encoding: underscores or dots for spaces, `_ ` for `: `, `.-.` for ` - `, Anna's Archive's `_` for `.`, Z-Library's double space for `: `, slugs back into words, Springer's CamelCase into words, `Last, First` into `First Last` (never `Smith, Jr.`).
+2. Undoes the site's encoding: underscores or dots for spaces, `_ ` for `: `, `.-.` for ` - `, Anna's Archive's `_` for `.`, Z-Library's double space and OceanofPDF's double underscore for `: `, slugs back into words, Springer's CamelCase into words, `Last, First` into `First Last` (never `Smith, Jr.`).
 3. Recognises the order when the scheme fixes it. A plain `A - B` is read author first, as the README asks, unless B reads more like a person than A (two or three capitalised words, an initial, no digits, no colon). When the name could be read either way and the other half could be a person at all, the other reading travels along as `FilenameFacts.alternate`.
 4. Series shapes from other tools are read too: `[Series #2]` as its own segment and `Title (Series Book 2)`.
 5. A name that carries no title (`pg1342`, an ISBN) is reported as such, in the CLI line and on the page, instead of "no source answered".

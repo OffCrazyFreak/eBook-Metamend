@@ -71,6 +71,13 @@ class TestNamesFromTheWild:
                 'Mara Voss',
                 'Slow-Grown Fruit',
             ),
+            # The colon survives as a double underscore, the site cuts the title short.
+            (
+                '_OceanofPDF.com_The_Quiet_Orchard__A_Year_Of_Prun_-_Mara_T_Voss',
+                'oceanofpdf',
+                'Mara T Voss',
+                'The Quiet Orchard: A Year Of Prun',
+            ),
             # Anna's Archive: " -- " between fields, every "." turned into "_".
             (
                 'The Quiet Orchard -- Mara T_ Voss -- Hill Press, 2011 -- Hill Press -- 9781594488849 -- '

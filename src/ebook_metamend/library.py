@@ -185,7 +185,9 @@ def _read(stem: str) -> tuple[list[str], str, str | None]:
 
     match = _OCEANOFPDF.match(s)
     if match:
-        text = match.group('rest').replace('_-_', ' - ').replace('_', ' ')
+        text = match.group('rest').replace('_-_', ' - ')
+        # A dropped colon leaves a double underscore, so the subtitle boundary survives.
+        text = re.sub(r'(?<=\w)__(?=\w)', ': ', text).replace('_', ' ')
         return _split(text), 'oceanofpdf', 'title-first'
 
     if ' -- ' in s:
