@@ -228,6 +228,34 @@ def sim(a: str | None, b: str | None, *, prefix_bonus: bool = True) -> float:
     return min(score, ADAPTATION_SCORE) if differently_derived else score
 
 
+def title_sim(source_title: str | None, filename_title: str, main_title: str) -> float:
+    """Score a source's title against the filename's, with the direction that
+    matters for a title.
+
+    ``sim`` treats a prefix as the same book with and without its subtitle in
+    either direction, which is right when the *source* is the longer one: the
+    filename says "Sapiens", the catalogue "Sapiens: A Brief History of
+    Humankind". A source that names *less than the filename's main title* is
+    another matter. The filename is the ground truth, and it says the book is
+    called more than that: "The Dark Tower" answered for "The Dark Tower The
+    Waste Lands" is volume VII, and "The Happiest Baby on the Block" answered
+    for the two-book omnibus is one of its halves. Both are strict prefixes and
+    both used to score 0.95, so two catalogues answering with the shorter book
+    agreed with each other and its ISBN reached HIGH. Capped at CONTAINED_SCORE,
+    as ``_author_sim`` already caps a name that shortens the filename's.
+
+    ``main_title`` is the filename's title before its declared subtitle
+    separator (``FilenameFacts.query``): a source answering exactly that, or
+    more, is the book listed without or with its subtitle and keeps the prefix
+    score. Only a source that stops short of the main title is under-specified.
+    """
+    score = sim(source_title, filename_title)
+    answered, main = norm(source_title), norm(main_title)
+    if answered and main and main.startswith(f'{answered} '):
+        return min(score, CONTAINED_SCORE)
+    return score
+
+
 #: How a filename names several authors. Commas are deliberately absent:
 #: "Smith, Jr." is one person, not two.
 _AUTHOR_SEPARATOR = re.compile(r'\s+(?:and|with|&)\s+', re.I)

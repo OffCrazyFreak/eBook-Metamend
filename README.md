@@ -115,7 +115,7 @@ Files that arrived from elsewhere are read the way their source wrote them, so n
 
 Naive string similarity fails on real book titles, so two cases are handled specially:
 
-- **Prefix containment is legitimate.** "Digital Minimalism" vs "Digital Minimalism: Choosing a Focused Life in a Noisy World" is the same book, main title plus subtitle. Scored 0.95.
+- **Prefix containment is legitimate, in one direction.** "Digital Minimalism" vs "Digital Minimalism: Choosing a Focused Life in a Noisy World" is the same book, main title plus subtitle. Scored 0.95. A source that stops *short of the filename's main title* is not: "The Dark Tower" answered for a file called "The Dark Tower The Waste Lands" is volume VII, and "Dune" answered for "Dune Messiah" is the first book. The filename says the book is called more than that, so those are capped at 0.69 like any other containment. A source answering exactly the main title before a declared subtitle, or more, keeps 0.95.
 - **Non-prefix containment is suspicious.** An omnibus titled "The Happiest Baby on the Block and The Happiest Toddler on the Block" contains the title of a book it is not. Capped at 0.69, deliberately below both the threshold that would let it be written and the one that lets an author vouch for a match.
 
 A third case is handled separately. **Adaptations and translations are different books that share a title**, so `On Liberty (Squashed Edition)`, `Atomic Habits (Tamil)`, `The Alchemist Graphic Novel` and `Man's Search for Meaning adapted for Young Adults` are capped at 0.55, below even the floor at which a source may contribute a field at all. Every one of those was returned by a live source for the correctly named file.

@@ -10,7 +10,7 @@ import pytest
 
 from ebook_metamend import calibre, enrich
 from ebook_metamend.library import Book
-from ebook_metamend.matching import SourceScore
+from ebook_metamend.matching import CONTAINED_SCORE, SourceScore
 from ebook_metamend.sources import cache, calibre_plugin, http
 
 
@@ -202,6 +202,54 @@ class TestNothingIsWrittenWithoutSomethingToScoreAgainst:
         assert proposal.conf == 'LOW'
         assert proposal.au_score == 0.0
         enrich.reset_run_state()
+
+
+class TestAShorterBookCannotBeWrittenOverALongerOne:
+    """Two catalogues answering with the earlier volume of a series, whose title
+    is the head of this one's, used to agree with each other and reach HIGH; the
+    earlier volume's ISBN and series index were then proposed for this file."""
+
+    def test_two_sources_naming_the_head_volume_stay_below_high(self, monkeypatch, tmp_path):
+        head = {
+            'title': 'The Quiet Orchard',
+            'authors': ['Mara Voss'],
+            'isbn': '9781594488849',
+            'series': 'The Quiet Orchard',
+            'sidx': '1',
+        }
+        one = enrich.SOURCES[0].__class__(name='one', fetch=lambda t, a: dict(head), pause=0)
+        two = enrich.SOURCES[0].__class__(name='two', fetch=lambda t, a: dict(head), pause=0)
+        monkeypatch.setattr(enrich, 'SOURCES', (one, two))
+        monkeypatch.setattr(calibre, 'read_book_metadata', lambda path: {})
+        enrich.reset_run_state()
+        path = tmp_path / 'Mara Voss - The Quiet Orchard The Winter Pruning.epub'
+        path.write_bytes(b'')
+        proposal = enrich.propose(Book(stem=path.stem, formats={'.epub': str(path)}), pause=False)
+        enrich.reset_run_state()
+        assert proposal is not None
+        # MED, not HIGH: the author still matches, so the answer keeps a say,
+        # but the earlier volume's identifiers are behind the --include-low gate.
+        assert proposal.conf == 'MED'
+        assert proposal.fn_score == CONTAINED_SCORE
+
+    def test_the_same_head_declared_as_the_main_title_is_the_book_itself(
+        self, monkeypatch, tmp_path
+    ):
+        """ "Mara Voss - The Quiet Orchard - The Winter Pruning" declares "The Quiet
+        Orchard" as the main title, so a catalogue answering exactly that is the
+        book listed without its subtitle and HIGH is right."""
+        answer = {'title': 'The Quiet Orchard', 'authors': ['Mara Voss']}
+        one = enrich.SOURCES[0].__class__(name='one', fetch=lambda t, a: dict(answer), pause=0)
+        two = enrich.SOURCES[0].__class__(name='two', fetch=lambda t, a: dict(answer), pause=0)
+        monkeypatch.setattr(enrich, 'SOURCES', (one, two))
+        monkeypatch.setattr(calibre, 'read_book_metadata', lambda path: {})
+        enrich.reset_run_state()
+        path = tmp_path / 'Mara Voss - The Quiet Orchard - The Winter Pruning.epub'
+        path.write_bytes(b'')
+        proposal = enrich.propose(Book(stem=path.stem, formats={'.epub': str(path)}), pause=False)
+        enrich.reset_run_state()
+        assert proposal is not None
+        assert proposal.conf == 'HIGH'
 
 
 class TestTheOtherReadingOfANameIsTriedWhenTheFirstFindsNothing:

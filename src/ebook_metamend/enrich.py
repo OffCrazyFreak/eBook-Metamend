@@ -169,7 +169,7 @@ def score(answers: dict[str, dict[str, Any]], facts) -> tuple[list[matching.Sour
         matching.SourceScore(
             name=name,
             title=answer.get('title', ''),
-            title_score=matching.sim(answer.get('title', ''), facts.title),
+            title_score=matching.title_sim(answer.get('title', ''), facts.title, facts.query),
             author_score=matching.best_author_score(answer.get('authors') or [], facts.author),
         )
         for name, answer in answers.items()

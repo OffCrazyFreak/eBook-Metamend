@@ -20,6 +20,7 @@ from ebook_metamend.matching import (
     looks_derived,
     norm,
     sim,
+    title_sim,
 )
 
 
@@ -392,6 +393,63 @@ class TestForANameTheDirectionCarriesTheMeaning:
 
     def test_an_exact_author_is_unaffected(self):
         assert best_author_score(['James Clear'], 'James Clear') == 1.0
+
+
+class TestForATitleTheDirectionCarriesTheMeaningToo:
+    """A source title that extends the filename's is the book with its subtitle.
+    One that stops short of the filename's main title is under-specified: the
+    filename says the book is called more than that, and the shorter book is a
+    different one. Measured: "The Dark Tower" answered for "The Dark Tower The
+    Waste Lands" is volume VII, and the first volume answered for a two-book
+    omnibus is half of it; both scored 0.95 and two catalogues agreeing on the
+    shorter book reached HIGH."""
+
+    @pytest.mark.parametrize(
+        'answered, filename_title, main_title',
+        [
+            ('The Dark Tower', 'The Dark Tower The Waste Lands', 'The Dark Tower The Waste Lands'),
+            ('Dune', 'Dune Messiah', 'Dune Messiah'),
+            (
+                'The Happiest Baby on the Block',
+                'The Happiest Baby On The Block And The Happiest Toddler On The Block',
+                'The Happiest Baby On The Block And The Happiest Toddler On The Block',
+            ),
+            # Shorter than the declared main title, not merely shorter than the whole.
+            ('Digital', 'Digital Minimalism - Choosing a Focused Life', 'Digital Minimalism'),
+        ],
+    )
+    def test_a_source_that_stops_short_of_the_main_title_cannot_be_strong(
+        self, answered, filename_title, main_title
+    ):
+        assert sim(answered, filename_title) == PREFIX_SCORE, 'sim alone still calls it a prefix'
+        assert title_sim(answered, filename_title, main_title) == CONTAINED_SCORE
+        assert title_sim(answered, filename_title, main_title) < TITLE_STRONG
+
+    @pytest.mark.parametrize(
+        'answered, filename_title, main_title',
+        [
+            # Exactly the main title: the book listed without its subtitle.
+            ('Sapiens', 'Sapiens - A Brief History of Humankind', 'Sapiens'),
+            ('Bad Blood', 'Bad Blood - Secrets And Lies In A Silicon Valley Startup', 'Bad Blood'),
+            # More than the main title: the book with its subtitle, even cut short.
+            ('Sapiens: A Brief History', 'Sapiens - A Brief History of Humankind', 'Sapiens'),
+            # The catalogue is the longer one: the filename left the subtitle off.
+            (
+                'Digital Minimalism: Choosing a Focused Life',
+                'Digital Minimalism',
+                'Digital Minimalism',
+            ),
+        ],
+    )
+    def test_the_main_title_or_more_still_scores_as_a_prefix(
+        self, answered, filename_title, main_title
+    ):
+        assert title_sim(answered, filename_title, main_title) >= PREFIX_SCORE
+
+    def test_everything_else_is_plain_sim(self):
+        assert title_sim('Dune', 'Dune', 'Dune') == 1.0
+        assert title_sim('Dune', 'Dune Messiah', 'Dune') == PREFIX_SCORE
+        assert title_sim('', 'Dune Messiah', 'Dune Messiah') == 0.0
 
 
 class TestAFilenameMayNameSeveralAuthors:
