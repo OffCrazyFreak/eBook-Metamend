@@ -119,14 +119,30 @@ scope.onmessage = async (event: MessageEvent<ToWorker>) => {
         fn.destroy()
         const proposal = result === undefined ? null : result.toJs(toPlain)
         result?.destroy?.()
-        const factsProxy = web.facts(message.stem)
-        const facts = factsProxy.toJs(toPlain)
-        factsProxy.destroy()
+        // The reading the verdict was scored against travels with the proposal;
+        // a name nobody answered for is read the same way it was shown.
+        let facts = proposal?.facts
+        if (facts) delete proposal.facts
+        else {
+          const factsProxy = web.facts(message.stem)
+          facts = factsProxy.toJs(toPlain)
+          factsProxy.destroy()
+        }
         const pause: number = web.pause_after()
         const shelved = web.unavailable()
         const unavailable = shelved.toJs() as SourceName[]
         shelved.destroy()
         post({ type: 'proposed', id: message.id, facts, proposal, pause, unavailable })
+        return
+      }
+      case 'facts': {
+        const facts = message.stems.map((stem) => {
+          const proxy = web!.facts(stem)
+          const plain = proxy.toJs(toPlain)
+          proxy.destroy()
+          return plain
+        })
+        post({ type: 'facts', id: message.id, facts })
         return
       }
       case 'apply': {

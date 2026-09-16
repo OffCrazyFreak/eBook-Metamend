@@ -176,12 +176,141 @@ class TestAnExistingDescriptionIsNotTradedForALongerOne:
 
 
 class TestNothingIsWrittenWithoutSomethingToScoreAgainst:
-    def test_a_filename_with_no_author_separator_is_skipped(self, tmp_path):
-        """ "Dune" parses as all author and no title, so every score would be 0.0
-        against an empty string and any answer would look equally related."""
+    def test_a_filename_with_no_title_is_skipped(self, tmp_path):
+        """A bare ISBN names no title, so every score would be 0.0 against an
+        empty string and any answer would look equally related."""
+        book = tmp_path / '9780465050659.epub'
+        book.write_bytes(b'')
+        assert enrich.propose(Book(stem='9780465050659', formats={'.epub': str(book)})) is None
+
+    def test_a_title_with_no_author_can_never_be_strong(self, tmp_path, monkeypatch):
+        """ "Dune" is a title and nobody's name. A source naming the book exactly
+        still has no author to be checked against, so it cannot vouch for the
+        book on its own and the verdict stays LOW."""
         book = tmp_path / 'Dune.epub'
         book.write_bytes(b'')
-        assert enrich.propose(Book(stem='Dune', formats={'.epub': str(book)})) is None
+        exact = enrich.SOURCES[0].__class__(
+            name='exact',
+            fetch=lambda t, a: {'title': 'Dune', 'authors': ['Frank Herbert']},
+            pause=0,
+        )
+        monkeypatch.setattr(enrich, 'SOURCES', (exact,))
+        monkeypatch.setattr(calibre, 'read_book_metadata', lambda path: {})
+        enrich.reset_run_state()
+        proposal = enrich.propose(Book(stem='Dune', formats={'.epub': str(book)}), pause=False)
+        assert proposal is not None
+        assert proposal.conf == 'LOW'
+        assert proposal.au_score == 0.0
+        enrich.reset_run_state()
+
+
+class TestTheOtherReadingOfANameIsTriedWhenTheFirstFindsNothing:
+    """Half the tools out there write the title first (Calibre, Anna's Archive,
+    Z-Library), half the author first (this tool, Readarr, libgen). The
+    catalogues settle it, not a guess."""
+
+    @pytest.fixture
+    def catalogue(self, monkeypatch, tmp_path):
+        asked = []
+
+        def fetch(title, author):
+            asked.append((title, author))
+            # The catalogue knows one book and answers only a query that names it.
+            if title in ('The Quiet Orchard', 'Quiet Orchard') and author == 'Mara Voss':
+                return {'title': title, 'authors': ['Mara Voss']}
+            return None
+
+        one = enrich.SOURCES[0].__class__(name='one', fetch=fetch, pause=0)
+        two = enrich.SOURCES[0].__class__(name='two', fetch=fetch, pause=0)
+        monkeypatch.setattr(enrich, 'SOURCES', (one, two))
+        monkeypatch.setattr(calibre, 'read_book_metadata', lambda path: {})
+        enrich.reset_run_state()
+        yield asked
+        enrich.reset_run_state()
+
+    def _book(self, tmp_path, stem):
+        path = tmp_path / f'{stem}.epub'
+        path.write_bytes(b'')
+        return Book(stem=stem, formats={'.epub': str(path)})
+
+    def test_a_title_first_name_reaches_high_on_the_second_reading(self, catalogue, tmp_path):
+        """ "Quiet Orchard - Mara Voss" reads author first by the tool's own
+        convention; the catalogues know it the other way round."""
+        proposal = enrich.propose(self._book(tmp_path, 'Quiet Orchard - Mara Voss'), pause=False)
+        assert proposal is not None
+        assert proposal.conf == 'HIGH'
+        assert proposal.facts.author == 'Mara Voss'
+        assert proposal.facts.title == 'Quiet Orchard'
+        assert catalogue[:2] == [('Mara Voss', 'Quiet Orchard')] * 2
+
+    def test_an_author_first_name_costs_one_round(self, catalogue, tmp_path):
+        proposal = enrich.propose(
+            self._book(tmp_path, 'Mara Voss - The Quiet Orchard'), pause=False
+        )
+        assert proposal is not None
+        assert proposal.conf == 'HIGH'
+        assert catalogue == [('The Quiet Orchard', 'Mara Voss')] * 2
+
+    def test_the_second_reading_is_not_taken_when_it_finds_nothing_either(
+        self, catalogue, tmp_path
+    ):
+        proposal = enrich.propose(self._book(tmp_path, 'Some Other Book - Ann Person'), pause=False)
+        assert proposal is None
+        # Both readings were tried, once per source.
+        assert len(catalogue) == 4
+
+    def test_a_half_that_cannot_be_a_person_is_never_asked_as_one(self, catalogue, tmp_path):
+        """A subtitle or a product name makes no author, so the other reading is
+        not worth a round of queries."""
+        stem = 'Ann Person - Some Product Guide for Version 4 Cloud and Beyond'
+        enrich.propose(self._book(tmp_path, stem), pause=False)
+        assert len(catalogue) == 2
+
+    def test_a_missing_recording_for_the_other_reading_is_skipped(self, monkeypatch, tmp_path):
+        """A fixture set recorded before names had two readings has no key for
+        the second one; the run reports it and carries on rather than aborting."""
+        from ebook_metamend.sources import cache
+
+        def strict(title, author):
+            if title == 'The Quiet Orchard':
+                return None
+            raise cache.MissingFixture(f'{title!r} / {author!r}')
+
+        one = enrich.SOURCES[0].__class__(name='one', fetch=strict, pause=0)
+        monkeypatch.setattr(enrich, 'SOURCES', (one,))
+        monkeypatch.setattr(calibre, 'read_book_metadata', lambda path: {})
+        enrich.reset_run_state()
+        assert (
+            enrich.propose(self._book(tmp_path, 'Ann Person - The Quiet Orchard'), pause=False)
+            is None
+        )
+        assert enrich.last_rounds == 2
+        enrich.reset_run_state()
+
+    def test_a_book_read_both_ways_reports_two_rounds(self, catalogue, tmp_path):
+        """The page paces between books, not inside one, so it must know a book
+        cost two rounds to keep a source under its rate."""
+        enrich.propose(self._book(tmp_path, 'Some Other Book - Ann Person'), pause=False)
+        assert enrich.last_rounds == 2
+        enrich.propose(self._book(tmp_path, 'Mara Voss - The Quiet Orchard'), pause=False)
+        assert enrich.last_rounds == 1
+
+    def test_only_the_whole_title_is_ever_asked_for(self, catalogue, tmp_path):
+        """A retry with the head of a glued title once drew a different volume out
+        of the catalogues, a strict prefix that the prefix rule scores 0.95, and
+        proposed its ISBN. The catalogues are asked about the whole title only."""
+        enrich.propose(
+            self._book(tmp_path, 'Ann Person - The Quiet Orchard The Year Of Pruning'), pause=False
+        )
+        assert {title for title, _ in catalogue} == {'The Quiet Orchard The Year Of Pruning'}
+
+    def test_a_series_name_has_one_reading(self, catalogue, tmp_path):
+        """ "Author - Series - 02 - Title" is this tool's own convention; the
+        other way round fits nothing, so it is never asked."""
+        enrich.propose(
+            self._book(tmp_path, 'Ann Person - Hill Country - 02 - Some Book'), pause=False
+        )
+        assert catalogue == [('Some Book', 'Ann Person')] * 2
 
 
 class TestTheApplyGate:

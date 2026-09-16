@@ -115,6 +115,20 @@ describe('Client', () => {
     await expect(pending).resolves.toMatchObject({ id: 1, pause: 3, unavailable: ['openlib'] })
   })
 
+  it('asks the worker how each filename reads', async () => {
+    const { client, worker } = make()
+    const pending = client.facts(['A - B', 'pg1342'])
+    expect(worker.posted[1].message).toMatchObject({
+      type: 'facts',
+      id: 1,
+      stems: ['A - B', 'pg1342'],
+    })
+    const read = { author: 'A', title: 'B', series: null, series_index: null, scheme: '' }
+    const bare = { author: '', title: '', series: null, series_index: null, scheme: 'gutenberg' }
+    worker.reply({ type: 'facts', id: 1, facts: [read, bare] })
+    await expect(pending).resolves.toEqual([read, bare])
+  })
+
   it('gives each request a fresh id', () => {
     const { client, worker } = make()
     void client.propose('one', {})

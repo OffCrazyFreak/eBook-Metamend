@@ -62,6 +62,27 @@ export interface FilenameFacts {
   title: string
   series: string | null
   series_index: string | null
+  // The naming scheme the file arrived in (docs/filenames.md); '' for the
+  // plain "Author - Title".
+  scheme: string
+}
+
+// How the page names a recognised scheme. A scheme with no title says so.
+export const SCHEME_LABEL: Record<string, string> = {
+  'title-first': 'title first',
+  'title-by-author': 'title by author',
+  oceanofpdf: 'an OceanofPDF name',
+  'annas-archive': 'an Anna\u2019s Archive name',
+  'z-library': 'a Z-Library name',
+  libgen: 'a Library Genesis name',
+  pdfdrive: 'a PDFDrive name',
+  dotted: 'a dotted release name',
+  slug: 'a slug',
+  springer: 'a Springer name',
+  gutenberg: 'a Project Gutenberg number',
+  'internet-archive': 'an Internet Archive identifier',
+  isbn: 'a bare ISBN',
+  kindle: 'a Kindle ASIN',
 }
 
 // skipped: the visitor stopped the run before this book was checked.
@@ -87,8 +108,11 @@ export type RunEvent =
   | { type: 'book'; result: BookResult }
   | { type: 'done'; elapsedMs: number }
 
-export function verdict(result: BookResult): Confidence | 'NONE' | 'UNREADABLE' {
-  if (result.proposal === null) return 'NONE'
+export type Verdict = Confidence | 'NONE' | 'UNTITLED' | 'UNREADABLE'
+
+export function verdict(result: BookResult): Verdict {
+  // A name with no title in it was never asked about; that is not "no answer".
+  if (result.proposal === null) return result.facts.title ? 'NONE' : 'UNTITLED'
   if (result.proposal.unreadable) return 'UNREADABLE'
   return result.proposal.conf
 }

@@ -34,23 +34,28 @@ import {
   type Selection,
 } from '@/selection'
 import {
+  SCHEME_LABEL,
   SOURCE_LABEL,
   verdict,
   willWrite,
   type BookResult,
-  type Confidence,
   type Metadata,
   type SourceName,
+  type Verdict,
 } from '@/types'
-
-type Verdict = Confidence | 'NONE' | 'UNREADABLE'
 
 const VERDICT_LABEL: Record<Verdict, string> = {
   HIGH: 'HIGH',
   MED: 'MED',
   LOW: 'LOW',
   NONE: 'NO ANSWER',
+  UNTITLED: 'NO TITLE',
   UNREADABLE: 'UNREADABLE',
+}
+
+// A name that carries no title is shown as the file it is.
+function shown(book: BookResult): string {
+  return book.facts.title || book.stem.slice(book.stem.lastIndexOf('/') + 1)
 }
 
 const EASE = [0.2, 0.8, 0.2, 1] as const
@@ -915,7 +920,7 @@ function Summary({
               type="button"
               className="bp-segment block h-full w-full"
               data-verdict={b.status === 'done' ? verdict(b) : 'PENDING'}
-              aria-label={`${b.facts.title}: ${b.status === 'done' ? VERDICT_LABEL[verdict(b)] : 'not checked yet'}`}
+              aria-label={`${shown(b)}: ${b.status === 'done' ? VERDICT_LABEL[verdict(b)] : 'not checked yet'}`}
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
               onFocus={() => setHover(i)}
@@ -938,7 +943,7 @@ function Summary({
                     : 'translateX(-50%)',
             }}
           >
-            {books[hover].facts.title}
+            {shown(books[hover])}
           </span>
         )}
       </ol>
@@ -1020,7 +1025,7 @@ function Results({
               <div className="grid grid-cols-[1.25rem_1fr] items-center gap-4">
                 {done ? (
                   <Tick
-                    label={`Select ${book.facts.title}`}
+                    label={`Select ${shown(book)}`}
                     checked={isSelected(selection, book)}
                     idle={!willWrite(book)}
                     onChange={() => onToggle(book)}
@@ -1038,7 +1043,7 @@ function Results({
                     {String(i + 1).padStart(2, '0')}
                   </span>
                   <span className="min-w-0">
-                    <span className="bp-row-title line-clamp-2">{book.facts.title}</span>
+                    <span className="bp-row-title line-clamp-2">{shown(book)}</span>
                     <span className="line-clamp-2 text-sm text-[var(--bp-muted)]">
                       {book.facts.author}
                       {book.facts.series && ` · ${book.facts.series} ${book.facts.series_index}`}
@@ -1386,14 +1391,28 @@ function Detail({
             </DialogClose>
             <span className="bp-dim w-48">sheet detail</span>
             <DialogTitle className="bp-display mt-4 text-2xl leading-tight text-[var(--bp-ink)]">
-              {book.facts.title}
+              {shown(book)}
             </DialogTitle>
             <DialogDescription className="text-[var(--bp-muted)]">
               {book.facts.author}
               {book.facts.series && ` · ${book.facts.series} ${book.facts.series_index}`}
             </DialogDescription>
+            {book.facts.scheme && book.facts.title && (
+              <p className="bp-mono mt-2 text-xs text-[var(--bp-muted)]">
+                Read as {SCHEME_LABEL[book.facts.scheme] ?? book.facts.scheme}:{' '}
+                <span className="text-[var(--bp-ink)]">{book.facts.author || 'no author'}</span> /{' '}
+                <span className="text-[var(--bp-ink)]">{book.facts.title}</span>
+              </p>
+            )}
 
-            {p === null ? (
+            {p === null && !book.facts.title ? (
+              <p className="mt-6 text-[var(--bp-muted)]">
+                The file name carries no title to look up
+                {book.facts.scheme && ` (${SCHEME_LABEL[book.facts.scheme] ?? book.facts.scheme})`},
+                so no catalogue was asked. Name the file{' '}
+                <span className="bp-mono">Author - Title</span> and check it again.
+              </p>
+            ) : p === null ? (
               <p className="mt-6 text-[var(--bp-muted)]">
                 No catalogue answered for this filename. Nothing is proposed.
               </p>

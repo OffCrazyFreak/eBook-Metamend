@@ -6,6 +6,7 @@ the CLI owns presentation.
 
 from __future__ import annotations
 
+import functools
 import re
 import sys
 import time
@@ -14,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import calibre, matching, tags
-from .library import Book, books
+from .library import Book, FilenameFacts, books
 from .sources import SOURCES, Pacer, Source, cache
 from .sources.errors import SourceError, SourceUnavailable
 from .writers import epub, pdf
@@ -56,6 +57,8 @@ class Proposal:
     writes: list[tuple[str, bool, str]] = field(default_factory=list, repr=False)
     #: Every source's score, including the ones that earned no say. Reporting only.
     scores: list[matching.SourceScore] = field(default_factory=list, repr=False)
+    #: The reading of the filename the verdict was scored against. Reporting only.
+    facts: FilenameFacts | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         """The serialised form. Explicit rather than ``asdict`` so that adding a
@@ -81,6 +84,10 @@ unavailable_sources: dict[str, str] = {}
 _pacer = Pacer()
 #: Consecutive transport failures per source, for the shelving rule above.
 _failures: dict[str, int] = {}
+#: How many rounds of queries the last propose() made: two when a name was
+#: read both ways. A caller pacing itself between books waits that many times
+#: longer, so a source's rate holds even when a book cost two rounds.
+last_rounds = 1
 
 
 def reset_run_state() -> None:
@@ -90,10 +97,11 @@ def reset_run_state() -> None:
     once is never retried, and back-off from a previous run still applies. Fine
     for a single CLI invocation, wrong for anything longer lived.
     """
-    global _pacer
+    global _pacer, last_rounds
     unavailable_sources.clear()
     _failures.clear()
     _pacer = Pacer()
+    last_rounds = 1
 
 
 def query_sources(
@@ -401,18 +409,38 @@ def propose(
     sleep inside Python and waits between books in JavaScript instead.
     """
     facts = book.facts()
-    # A stem with no " - " parses as all author and no title, so every title
-    # score would be 0.0 against an empty string and any answer at all would
-    # look equally (un)related. There is nothing to score against, so do not ask.
+    # A stem that names no title (a Gutenberg number, a bare ISBN) leaves nothing
+    # to score against: every title score would be 0.0 against an empty string
+    # and any answer at all would look equally (un)related. So do not ask.
     if not facts.query:
         return None
-    answers = query_sources(
-        facts.query, facts.author, sources=sources, pause=pause, on_answer=on_answer
-    )
+    global last_rounds
+    last_rounds = 1
+    ask = functools.partial(query_sources, sources=sources, pause=pause, on_answer=on_answer)
+    answers = ask(facts.query, facts.author)
+    scores, conf = score(answers, facts) if answers else ([], 'LOW')
+    if facts.alternate is not None and not any(s.strong for s in scores):
+        # Nothing identified the book as first read, and the name could be read
+        # the other way round: half the tools out there write the title first.
+        # The catalogues settle it. A wrong reading cannot score: a source would
+        # have to name a book whose title is the author's name and whose author
+        # is the title, twice over, so the bar for writing is unchanged.
+        other = facts.alternate
+        try:
+            other_answers = ask(other.query, other.author)
+        except cache.MissingFixture as exc:
+            # A set recorded before names had two readings has no key for the
+            # second one. The first round stays loud about a missing key; this
+            # round is opportunistic, so it is reported and skipped.
+            print(f'replay has no recording for the other reading: {exc}', file=sys.stderr)
+            other_answers = {}
+        last_rounds = 2
+        other_scores, other_conf = score(other_answers, other) if other_answers else ([], 'LOW')
+        if any(s.strong for s in other_scores):
+            facts, answers, scores, conf = other, other_answers, other_scores, other_conf
     if not answers:
         return None
 
-    scores, conf = score(answers, facts)
     trusted = trusted_names(scores)
     title_score, author_score = reported_scores(scores, trusted)
     surviving = {name: answers[name] for name in trusted}
@@ -437,6 +465,7 @@ def propose(
         current=current or {},
         unreadable=unreadable,
         scores=scores,
+        facts=facts,
     )
 
 

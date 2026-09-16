@@ -1,7 +1,7 @@
 // The page's side of the worker protocol: one worker, requests matched to
 // replies by id, and broadcast events (loading, answers) handed to a listener.
 
-import type { Proposal } from '@/types'
+import type { FilenameFacts, Proposal } from '@/types'
 
 import type { FileBytes, FromWorker, ToWorker, WriteOutcome } from '@/worker/protocol'
 
@@ -79,6 +79,16 @@ export class Client {
       })
       this.send(build(id), transfer)
     })
+  }
+
+  // What each filename claims, from the parser inside the worker.
+  async facts(stems: string[]): Promise<FilenameFacts[]> {
+    const reply = await this.request<Extract<Reply, { type: 'facts' }>>((id) => ({
+      type: 'facts',
+      id,
+      stems,
+    }))
+    return reply.facts
   }
 
   // The id of the propose request in flight, for telling its answers apart.

@@ -111,6 +111,8 @@ Books are expected to be named `Author - Title - Subtitle.epub`, optionally with
     └── Paulo Coelho - The Alchemist.epub
 ```
 
+Files that arrived from elsewhere are read the way their source wrote them, so nothing has to be renamed first: Calibre's `Title - Author`, `_OceanofPDF.com_Title_-_Author`, Anna's Archive's `Title -- Author -- ... -- Anna’s Archive`, Z-Library's `Title (Author) (z-lib.org)`, Library Genesis, PDFDrive, Standard Ebooks slugs and the rest of what [docs/filenames.md](docs/filenames.md) lists. A plain `A - B` that could be read either way is read author first, and if no catalogue identifies the book that way the other reading is tried, so the catalogues settle the order rather than a guess. A name that carries no title at all (`pg1342.epub`, a bare ISBN) is reported as such instead of "no source answered".
+
 Naive string similarity fails on real book titles, so two cases are handled specially:
 
 - **Prefix containment is legitimate.** "Digital Minimalism" vs "Digital Minimalism: Choosing a Focused Life in a Noisy World" is the same book, main title plus subtitle. Scored 0.95.

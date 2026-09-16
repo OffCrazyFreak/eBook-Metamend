@@ -27,7 +27,7 @@ export function parseStem(stem: string): FilenameFacts {
     index = match.groups.index
     remainder = match.groups.title
   }
-  return { author, title: remainder.trim(), series, series_index: index }
+  return { author, title: remainder.trim(), series, series_index: index, scheme: '' }
 }
 
 function meta(partial: Partial<Metadata> = {}): Metadata {
